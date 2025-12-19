@@ -15,9 +15,9 @@ global:
 #         - targets:
 #           - alertmanager:9093
 
-# Rule files (optional)
-# rule_files:
-#   - "alerts/*.yml"
+# Rule files for alerting
+rule_files:
+  - "alerts.yml"
 
 # Scrape configurations
 scrape_configs:

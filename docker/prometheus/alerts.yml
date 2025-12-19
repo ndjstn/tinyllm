@@ -1,0 +1,244 @@
+# Prometheus alerting rules for TinyLLM SLOs
+#
+# Service Level Objectives (SLOs):
+# - Availability: 99.9% (error rate < 0.1%)
+# - Latency: P95 < 2s, P99 < 5s
+# - Throughput: Support peak load with <10% queue backlog
+# - Cache Hit Rate: > 60%
+
+groups:
+  - name: tinyllm_slo_alerts
+    interval: 30s
+    rules:
+      # Availability SLO: Error rate should be < 0.1% (99.9% availability)
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(tinyllm_errors_total[5m])
+            /
+            rate(tinyllm_requests_total[5m])
+          ) > 0.001
+        for: 5m
+        labels:
+          severity: critical
+          component: availability
+          slo: "99.9"
+        annotations:
+          summary: "High error rate detected (SLO breach)"
+          description: |
+            Error rate is {{ $value | humanizePercentage }} over the last 5 minutes.
+            This exceeds the 99.9% availability SLO (0.1% error budget).
+            Model: {{ $labels.model }}, Graph: {{ $labels.graph }}
+
+      # Latency SLO: P95 latency should be < 2s
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            rate(tinyllm_request_latency_seconds_bucket[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: latency
+          slo: p95
+        annotations:
+          summary: "P95 latency exceeds 2s threshold"
+          description: |
+            P95 request latency is {{ $value | humanizeDuration }}.
+            This exceeds the 2s SLO target.
+            Model: {{ $labels.model }}, Graph: {{ $labels.graph }}
+
+      # Latency SLO: P99 latency should be < 5s
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            rate(tinyllm_request_latency_seconds_bucket[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: critical
+          component: latency
+          slo: p99
+        annotations:
+          summary: "P99 latency exceeds 5s threshold (SLO breach)"
+          description: |
+            P99 request latency is {{ $value | humanizeDuration }}.
+            This exceeds the 5s SLO target and indicates serious performance degradation.
+            Model: {{ $labels.model }}, Graph: {{ $labels.graph }}
+
+      # Circuit Breaker: Alert when circuit is open
+      - alert: CircuitBreakerOpen
+        expr: tinyllm_circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: warning
+          component: reliability
+        annotations:
+          summary: "Circuit breaker is OPEN for model {{ $labels.model }}"
+          description: |
+            Circuit breaker has opened for model {{ $labels.model }}.
+            This indicates repeated failures and requests are being rejected.
+            Check model health and error logs.
+
+      # Queue backlog alert
+      - alert: HighQueueBacklog
+        expr: |
+          (
+            tinyllm_queue_pending
+            /
+            (tinyllm_queue_size + 1)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: throughput
+        annotations:
+          summary: "Queue backlog exceeds 10% of capacity"
+          description: |
+            Queue has {{ $value | humanizePercentage }} backlog.
+            Pending: {{ $labels.pending }}, Capacity: {{ $labels.size }}
+            System may be overloaded or processing too slowly.
+
+      # Cache performance alert
+      - alert: LowCacheHitRate
+        expr: |
+          (
+            rate(tinyllm_cache_hits_total[10m])
+            /
+            (rate(tinyllm_cache_hits_total[10m]) + rate(tinyllm_cache_misses_total[10m]))
+          ) < 0.6
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Cache hit rate below 60% target"
+          description: |
+            Cache hit rate is {{ $value | humanizePercentage }} over 10 minutes.
+            This is below the 60% efficiency target.
+            Consider reviewing cache configuration or TTL settings.
+
+      # No requests received (service may be down)
+      - alert: NoRequestsReceived
+        expr: |
+          rate(tinyllm_requests_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: availability
+        annotations:
+          summary: "No requests received in last 5 minutes"
+          description: |
+            TinyLLM has not received any requests in the last 5 minutes.
+            Service may be down or not receiving traffic.
+
+      # High active request count (potential overload)
+      - alert: HighActiveRequests
+        expr: tinyllm_active_requests > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: throughput
+        annotations:
+          summary: "High number of active requests"
+          description: |
+            {{ $value }} concurrent requests are being processed.
+            This may indicate system overload or slow processing.
+            Consider scaling or investigating slow requests.
+
+      # Token usage spike (cost/quota management)
+      - alert: HighTokenUsage
+        expr: |
+          (
+            rate(tinyllm_tokens_input_total[5m]) +
+            rate(tinyllm_tokens_output_total[5m])
+          ) > 10000
+        for: 5m
+        labels:
+          severity: info
+          component: cost
+        annotations:
+          summary: "High token usage detected"
+          description: |
+            Token usage is {{ $value }} tokens/sec.
+            This may impact API costs or quotas.
+            Model: {{ $labels.model }}
+
+  - name: tinyllm_system_alerts
+    interval: 30s
+    rules:
+      # Prometheus scrape failures
+      - alert: PrometheusScrapeFailure
+        expr: up{job="tinyllm"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Failed to scrape TinyLLM metrics"
+          description: |
+            Prometheus cannot scrape metrics from TinyLLM.
+            Service may be down or metrics endpoint not responding.
+
+      # Metric cardinality explosion warning
+      - alert: HighMetricCardinality
+        expr: |
+          count(tinyllm_requests_total) > 1000 or
+          count(tinyllm_errors_total) > 500
+        for: 10m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "High metric cardinality detected"
+          description: |
+            Metric cardinality is very high ({{ $value }} series).
+            This may indicate unbounded label values causing metric explosion.
+            Review label usage and implement cardinality controls.
+
+  - name: tinyllm_error_budget
+    interval: 1h
+    rules:
+      # Error budget burn rate (how fast we're consuming our error budget)
+      # For 99.9% SLO, we have 0.1% error budget per month
+      # Fast burn: consuming >10x budget rate = alert
+      - alert: FastErrorBudgetBurn
+        expr: |
+          (
+            rate(tinyllm_errors_total[1h])
+            /
+            rate(tinyllm_requests_total[1h])
+          ) > 0.01
+        for: 15m
+        labels:
+          severity: critical
+          component: slo
+          type: error_budget
+        annotations:
+          summary: "Fast error budget burn detected"
+          description: |
+            Error rate is {{ $value | humanizePercentage }} over the last hour.
+            This is 10x our error budget and will exhaust monthly SLO budget quickly.
+            Immediate action required to restore availability SLO.
+
+      # Slow error budget burn: consuming >2x budget rate
+      - alert: SlowErrorBudgetBurn
+        expr: |
+          (
+            rate(tinyllm_errors_total[6h])
+            /
+            rate(tinyllm_requests_total[6h])
+          ) > 0.002
+        for: 1h
+        labels:
+          severity: warning
+          component: slo
+          type: error_budget
+        annotations:
+          summary: "Elevated error rate burning error budget"
+          description: |
+            Error rate is {{ $value | humanizePercentage }} over the last 6 hours.
+            This is 2x our error budget target.
+            Monitor closely and investigate if trend continues.
