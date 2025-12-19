@@ -239,7 +239,8 @@ class GraphGenerator:
             GraphDefinition instance.
         """
         if graph_id is None:
-            graph_id = f"graph-{uuid4().hex[:8]}"
+            # Generate valid ID (no hyphens, start with letter)
+            graph_id = f"graph.{uuid4().hex[:8]}"
 
         # Create entry and exit nodes
         nodes = [
@@ -276,8 +277,13 @@ class GraphGenerator:
 
         return GraphDefinition(
             id=graph_id,
+            version="1.0.0",
+            name=f"Test Graph {graph_id}",
+            description="Auto-generated test graph",
             nodes=nodes,
             edges=edges,
+            entry_points=["entry"],
+            exit_points=["exit"],
         )
 
     @staticmethod
@@ -342,9 +348,14 @@ class GraphGenerator:
         ]
 
         return GraphDefinition(
-            id="branching-graph",
+            id="branching.graph",
+            version="1.0.0",
+            name="Branching Test Graph",
+            description="Graph with conditional routing",
             nodes=nodes,
             edges=edges,
+            entry_points=["entry"],
+            exit_points=["exit"],
         )
 
     @staticmethod
@@ -393,9 +404,14 @@ class GraphGenerator:
         ]
 
         return GraphDefinition(
-            id="parallel-graph",
+            id="parallel.graph",
+            version="1.0.0",
+            name="Parallel Test Graph",
+            description="Graph with parallel execution",
             nodes=nodes,
             edges=edges,
+            entry_points=["entry"],
+            exit_points=["exit"],
         )
 
 
