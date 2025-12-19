@@ -1,0 +1,120 @@
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+*.egg
+.eggs
+
+# Virtual environments
+.venv
+venv
+ENV
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.hypothesis
+*.cover
+.mypy_cache
+.ruff_cache
+.dmypy.json
+dmypy.json
+
+# Documentation
+docs
+*.md
+!README.md
+mkdocs.yml
+site
+
+# Benchmarks
+benchmarks
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+azure-pipelines.yml
+
+# Development
+.env
+.env.local
+.env.*.local
+*.local
+.tinyllm
+
+# Data and logs
+*.log
+*.db
+*.sqlite
+*.sqlite3
+data/
+logs/
+
+# Config (we'll mount these as volumes)
+config/environments
+
+# Tests
+tests
+run_tests.sh
+
+# Makefile and scripts (except docker-entrypoint.sh)
+Makefile
+*.sh
+!scripts/docker-entrypoint.sh
+
+# Docker
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile*
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+.cache
+
+# OS files
+Thumbs.db
+.DS_Store
+*.desktop
+
+# Version control
+.hg
+.svn
+
+# Node (if any)
+node_modules
+package-lock.json
+yarn.lock
+
+# Jupyter
+*.ipynb
+.ipynb_checkpoints
+
+# Pre-commit
+.pre-commit-config.yaml

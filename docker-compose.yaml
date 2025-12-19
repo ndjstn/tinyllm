@@ -1,0 +1,217 @@
+version: '3.8'
+
+services:
+  # TinyLLM Application Service
+  tinyllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: tinyllm-app
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"    # Application port
+      - "9090:9090"    # Prometheus metrics
+    environment:
+      # System configuration
+      TINYLLM_LOG_LEVEL: ${TINYLLM_LOG_LEVEL:-INFO}
+      TINYLLM_LOG_FORMAT: ${TINYLLM_LOG_FORMAT:-json}
+      TINYLLM_DATA_DIR: /app/data
+      TINYLLM_CONFIG_DIR: /app/config
+
+      # Ollama configuration
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_TIMEOUT_MS: 30000
+      OLLAMA_MAX_RETRIES: 3
+
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      # Metrics configuration
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      METRICS_PORT: 9090
+
+      # Python configuration
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+    volumes:
+      # Persistent data storage
+      - tinyllm-data:/app/data
+      - tinyllm-config:/app/config
+      - tinyllm-versions:/app/.tinyllm
+      # Optional: Mount custom graphs and prompts
+      # - ./graphs:/app/graphs:ro
+      # - ./prompts:/app/prompts:ro
+    networks:
+      - tinyllm-network
+    healthcheck:
+      test: ["CMD", "tinyllm", "health", "--json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Ollama LLM Backend Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tinyllm-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"  # Ollama API
+    environment:
+      OLLAMA_HOST: 0.0.0.0
+      OLLAMA_ORIGINS: "*"
+      # GPU configuration (uncomment if you have NVIDIA GPU)
+      # NVIDIA_VISIBLE_DEVICES: all
+      # NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - tinyllm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Uncomment for GPU support
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Redis Cache/Messaging Service
+  redis:
+    image: redis:7-alpine
+    container_name: tinyllm-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --loglevel warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - tinyllm-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Prometheus Monitoring Service
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tinyllm-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"  # Prometheus UI (mapped to 9091 to avoid conflict)
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - tinyllm-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Grafana Dashboard (Optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tinyllm-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - tinyllm-network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Named volumes for data persistence
+volumes:
+  tinyllm-data:
+    driver: local
+    name: tinyllm-data
+  tinyllm-config:
+    driver: local
+    name: tinyllm-config
+  tinyllm-versions:
+    driver: local
+    name: tinyllm-versions
+  ollama-models:
+    driver: local
+    name: ollama-models
+  redis-data:
+    driver: local
+    name: redis-data
+  prometheus-data:
+    driver: local
+    name: prometheus-data
+  grafana-data:
+    driver: local
+    name: grafana-data
+
+# Network configuration
+networks:
+  tinyllm-network:
+    driver: bridge
+    name: tinyllm-network

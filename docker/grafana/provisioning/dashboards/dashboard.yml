@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'TinyLLM Dashboards'
+    orgId: 1
+    folder: 'TinyLLM'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true
