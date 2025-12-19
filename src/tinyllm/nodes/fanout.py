@@ -113,6 +113,11 @@ class FanoutConfig(NodeConfig):
     )
     retry_count: int = Field(default=0, ge=0, le=3)
     retry_delay_ms: int = Field(default=1000, ge=0, le=10000)
+    max_parallel_branches: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Maximum number of branches to execute in parallel (None = unlimited)",
+    )
 
 
 @NodeRegistry.register(NodeType.FANOUT)
@@ -216,6 +221,12 @@ class FanoutNode(BaseNode):
     ) -> FanoutResult:
         """Execute all targets in parallel using asyncio.gather.
 
+        Implements true parallel execution with:
+        - Partial failure recovery (return_exceptions=True)
+        - Concurrency limiting via semaphore
+        - Per-branch timeout support
+        - Proper context propagation
+
         Args:
             message: Input message to fan out.
             context: Execution context.
@@ -225,18 +236,46 @@ class FanoutNode(BaseNode):
         """
         start_time = asyncio.get_event_loop().time()
 
-        # Create tasks for all targets (wrap coroutines in actual tasks)
-        tasks = [
-            asyncio.create_task(self._execute_single_target(target, message, context))
-            for target in self._fanout_config.target_nodes
-        ]
-
         # For FIRST_SUCCESS, we can use asyncio.FIRST_COMPLETED
         if self._fanout_config.aggregation_strategy == AggregationStrategy.FIRST_SUCCESS:
+            tasks = [
+                asyncio.create_task(self._execute_single_target(target, message, context))
+                for target in self._fanout_config.target_nodes
+            ]
             target_results = await self._execute_first_success(tasks)
         else:
-            # Wait for all tasks to complete
-            target_results = await asyncio.gather(*tasks, return_exceptions=False)
+            # Execute with concurrency limiting if configured
+            if self._fanout_config.max_parallel_branches:
+                target_results = await self._execute_with_concurrency_limit(
+                    message, context
+                )
+            else:
+                # Execute all targets in parallel without limit
+                # Use return_exceptions=True to handle partial failures
+                results_or_exceptions = await asyncio.gather(
+                    *[
+                        self._execute_single_target(target, message, context)
+                        for target in self._fanout_config.target_nodes
+                    ],
+                    return_exceptions=True,
+                )
+
+                # Convert exceptions to failed FanoutTargetResult objects
+                target_results = []
+                for i, result_or_exc in enumerate(results_or_exceptions):
+                    if isinstance(result_or_exc, Exception):
+                        # Exception occurred during execution
+                        target_node = self._fanout_config.target_nodes[i]
+                        target_results.append(
+                            FanoutTargetResult(
+                                target_node=target_node,
+                                success=False,
+                                error=f"Exception during execution: {str(result_or_exc)}",
+                                latency_ms=0,
+                            )
+                        )
+                    else:
+                        target_results.append(result_or_exc)
 
         # Calculate total latency
         end_time = asyncio.get_event_loop().time()
@@ -246,6 +285,56 @@ class FanoutNode(BaseNode):
         return await self._aggregate_results(
             target_results, total_latency_ms, message
         )
+
+    async def _execute_with_concurrency_limit(
+        self, message: Message, context: "ExecutionContext"
+    ) -> List[FanoutTargetResult]:
+        """Execute targets with concurrency limiting.
+
+        Uses a semaphore to limit the number of concurrent executions.
+
+        Args:
+            message: Input message to fan out.
+            context: Execution context.
+
+        Returns:
+            List of FanoutTargetResult from all targets.
+        """
+        semaphore = asyncio.Semaphore(self._fanout_config.max_parallel_branches)
+
+        async def execute_with_semaphore(target: str) -> FanoutTargetResult:
+            """Execute a single target with semaphore control."""
+            async with semaphore:
+                return await self._execute_single_target(target, message, context)
+
+        # Execute all targets with concurrency limit
+        # Use return_exceptions=True to handle partial failures
+        results_or_exceptions = await asyncio.gather(
+            *[
+                execute_with_semaphore(target)
+                for target in self._fanout_config.target_nodes
+            ],
+            return_exceptions=True,
+        )
+
+        # Convert exceptions to failed FanoutTargetResult objects
+        target_results = []
+        for i, result_or_exc in enumerate(results_or_exceptions):
+            if isinstance(result_or_exc, Exception):
+                # Exception occurred during execution
+                target_node = self._fanout_config.target_nodes[i]
+                target_results.append(
+                    FanoutTargetResult(
+                        target_node=target_node,
+                        success=False,
+                        error=f"Exception during execution: {str(result_or_exc)}",
+                        latency_ms=0,
+                    )
+                )
+            else:
+                target_results.append(result_or_exc)
+
+        return target_results
 
     async def _execute_sequential(
         self, message: Message, context: "ExecutionContext"
@@ -284,6 +373,9 @@ class FanoutNode(BaseNode):
     ) -> List[FanoutTargetResult]:
         """Execute tasks and return when first one succeeds.
 
+        Implements early termination with proper exception handling.
+        If a task fails with an exception, it's converted to a failed result.
+
         Args:
             tasks: List of tasks to execute.
 
@@ -292,6 +384,7 @@ class FanoutNode(BaseNode):
         """
         pending = set(tasks)
         results: List[FanoutTargetResult] = []
+        task_to_index = {task: i for i, task in enumerate(tasks)}
 
         while pending:
             done, pending = await asyncio.wait(
@@ -299,45 +392,67 @@ class FanoutNode(BaseNode):
             )
 
             for task in done:
-                result = task.result()
-                results.append(result)
+                try:
+                    result = task.result()
+                    results.append(result)
 
-                # If we got a success, cancel remaining tasks and return
-                if result.success:
-                    for remaining in pending:
-                        remaining.cancel()
-                    # Wait for cancelled tasks to finish
-                    if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
-                    return results
+                    # If we got a success, cancel remaining tasks and return
+                    if result.success:
+                        for remaining in pending:
+                            remaining.cancel()
+                        # Wait for cancelled tasks to finish
+                        if pending:
+                            await asyncio.gather(*pending, return_exceptions=True)
+                        return results
+                except Exception as e:
+                    # Task raised an exception - convert to failed result
+                    task_index = task_to_index.get(task, 0)
+                    target_node = self._fanout_config.target_nodes[task_index]
+                    results.append(
+                        FanoutTargetResult(
+                            target_node=target_node,
+                            success=False,
+                            error=f"Exception during execution: {str(e)}",
+                            latency_ms=0,
+                        )
+                    )
 
         return results
 
     async def _execute_single_target(
         self, target_node: str, message: Message, context: "ExecutionContext"
     ) -> FanoutTargetResult:
-        """Execute a single target node.
+        """Execute a single target node with timeout and error handling.
+
+        Each target is executed independently with:
+        - Individual timeout (timeout_ms config)
+        - Exception handling (converts to failed result)
+        - Context propagation (passes full execution context)
+        - Proper parent-child message relationships
 
         This is a mock execution since we don't have actual node execution here.
         In a real implementation, this would invoke the target node through the executor.
 
         Args:
             target_node: Target node ID.
-            message: Input message.
-            context: Execution context.
+            message: Input message (propagated to target with context).
+            context: Execution context (propagated to maintain trace, graph state).
 
         Returns:
-            FanoutTargetResult from target execution.
+            FanoutTargetResult from target execution (never raises exceptions).
         """
         start_time = asyncio.get_event_loop().time()
 
         try:
-            # Create a timeout for this execution
+            # Create a timeout for this execution (per-branch timeout)
             async with asyncio.timeout(self._fanout_config.timeout_ms / 1000):
-                # In a real implementation, this would call context.execute_node(target_node, message)
+                # In a real implementation, this would call:
+                # context.execute_node(target_node, message)
+                # which would propagate the context to the target node
                 # For now, we'll create a simulated result
 
-                # Create output message as child of input
+                # Create output message as child of input (maintains message chain)
+                # Context is available for target execution (simulated here)
                 output_message = message.create_child(
                     source_node=target_node,
                     target_node=None,
@@ -346,6 +461,9 @@ class FanoutNode(BaseNode):
                             "metadata": {
                                 **message.payload.metadata,
                                 "fanout_target": target_node,
+                                # Context info could be added here if needed
+                                "trace_id": context.trace_id,
+                                "graph_id": context.graph_id,
                             }
                         }
                     ),

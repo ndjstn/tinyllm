@@ -1110,3 +1110,279 @@ class TestFanoutNode:
         output_msg = result.output_messages[0]
         assert output_msg.parent_id == "parent-123"
         assert output_msg.trace_id == "test"
+
+    @pytest.mark.asyncio
+    async def test_fanout_with_concurrency_limit(self, execution_context):
+        """Test fanout with max_parallel_branches concurrency limiting."""
+        definition = NodeDefinition(
+            id="fanout.concurrency",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": ["target1", "target2", "target3", "target4", "target5"],
+                "aggregation_strategy": "all",
+                "max_parallel_branches": 2,
+            },
+        )
+        node = FanoutNode(definition)
+
+        # Track concurrent executions
+        concurrent_count = [0]
+        max_concurrent = [0]
+        lock = asyncio.Lock()
+
+        async def mock_execute(target, msg, ctx):
+            async with lock:
+                concurrent_count[0] += 1
+                max_concurrent[0] = max(max_concurrent[0], concurrent_count[0])
+
+            # Simulate some work
+            await asyncio.sleep(0.01)
+
+            async with lock:
+                concurrent_count[0] -= 1
+
+            return FanoutTargetResult(
+                target_node=target,
+                success=True,
+                message=msg.create_child(
+                    source_node=target,
+                    payload=MessagePayload(content=f"Result from {target}"),
+                ),
+                latency_ms=10,
+            )
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="test",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        assert result.success is True
+        assert result.metadata["successful_targets"] == 5
+        # Max concurrent should not exceed the limit
+        assert max_concurrent[0] <= 2
+
+    @pytest.mark.asyncio
+    async def test_fanout_partial_failure_recovery(self, execution_context):
+        """Test that fanout continues execution even when some branches fail."""
+        definition = NodeDefinition(
+            id="fanout.partial_fail",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": ["good1", "bad1", "good2", "bad2", "good3"],
+                "aggregation_strategy": "all",
+            },
+        )
+        node = FanoutNode(definition)
+
+        async def mock_execute(target, msg, ctx):
+            if "bad" in target:
+                raise RuntimeError(f"Simulated error in {target}")
+            return FanoutTargetResult(
+                target_node=target,
+                success=True,
+                message=msg.create_child(
+                    source_node=target,
+                    payload=MessagePayload(content=f"Success from {target}"),
+                ),
+                latency_ms=100,
+            )
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="test",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        # Should succeed despite failures
+        assert result.success is True
+        assert result.metadata["successful_targets"] == 3
+        assert result.metadata["failed_targets"] == 2
+
+    @pytest.mark.asyncio
+    async def test_fanout_all_branches_exception(self, execution_context):
+        """Test fanout when all branches raise exceptions."""
+        definition = NodeDefinition(
+            id="fanout.all_exception",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": ["fail1", "fail2", "fail3"],
+                "aggregation_strategy": "all",
+            },
+        )
+        node = FanoutNode(definition)
+
+        async def mock_execute(target, msg, ctx):
+            raise ValueError(f"Error in {target}")
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="test",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        # Should fail when all branches fail
+        assert result.success is False
+        assert result.metadata["fanout_result"]["failed_targets"] == 3
+        assert result.metadata["fanout_result"]["successful_targets"] == 0
+
+    @pytest.mark.asyncio
+    async def test_fanout_first_success_with_exceptions(self, execution_context):
+        """Test FIRST_SUCCESS strategy handles exceptions correctly."""
+        definition = NodeDefinition(
+            id="fanout.first_success_exc",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": ["fail1", "fail2", "success", "slow"],
+                "aggregation_strategy": "first_success",
+            },
+        )
+        node = FanoutNode(definition)
+
+        async def mock_execute(target, msg, ctx):
+            if target == "fail1":
+                raise RuntimeError("Error in fail1")
+            elif target == "fail2":
+                return FanoutTargetResult(
+                    target_node=target,
+                    success=False,
+                    error="Failed intentionally",
+                    latency_ms=50,
+                )
+            elif target == "success":
+                await asyncio.sleep(0.01)
+                return FanoutTargetResult(
+                    target_node=target,
+                    success=True,
+                    message=msg.create_child(
+                        source_node=target,
+                        payload=MessagePayload(content="Success!"),
+                    ),
+                    latency_ms=10,
+                )
+            else:  # slow
+                await asyncio.sleep(1.0)
+                return FanoutTargetResult(
+                    target_node=target,
+                    success=True,
+                    message=msg.create_child(source_node=target, payload=msg.payload),
+                    latency_ms=1000,
+                )
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="test",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        # Should succeed with first successful result
+        assert result.success is True
+        # Should have found the success target
+        assert "Success!" in result.output_messages[0].payload.content
+
+    @pytest.mark.asyncio
+    async def test_fanout_concurrency_with_partial_failures(self, execution_context):
+        """Test concurrency limiting works correctly with partial failures."""
+        definition = NodeDefinition(
+            id="fanout.concurrency_fail",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": [f"target{i}" for i in range(10)],
+                "aggregation_strategy": "all",
+                "max_parallel_branches": 3,
+            },
+        )
+        node = FanoutNode(definition)
+
+        async def mock_execute(target, msg, ctx):
+            # Every other target fails
+            target_num = int(target.replace("target", ""))
+            if target_num % 2 == 0:
+                raise RuntimeError(f"Error in {target}")
+
+            await asyncio.sleep(0.01)
+            return FanoutTargetResult(
+                target_node=target,
+                success=True,
+                message=msg.create_child(
+                    source_node=target,
+                    payload=MessagePayload(content=f"Success from {target}"),
+                ),
+                latency_ms=10,
+            )
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="test",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        # Should succeed with partial results
+        assert result.success is True
+        assert result.metadata["successful_targets"] == 5
+        assert result.metadata["failed_targets"] == 5
+
+    @pytest.mark.asyncio
+    async def test_fanout_context_propagation(self, execution_context):
+        """Test that execution context is properly propagated to branches."""
+        definition = NodeDefinition(
+            id="fanout.context",
+            type=NodeType.FANOUT,
+            config={
+                "target_nodes": ["target1", "target2"],
+                "aggregation_strategy": "all",
+            },
+        )
+        node = FanoutNode(definition)
+
+        captured_contexts = []
+
+        async def mock_execute(target, msg, ctx):
+            # Capture the context passed to each branch
+            captured_contexts.append({
+                "trace_id": ctx.trace_id,
+                "graph_id": ctx.graph_id,
+                "target": target,
+            })
+
+            return FanoutTargetResult(
+                target_node=target,
+                success=True,
+                message=msg.create_child(
+                    source_node=target,
+                    payload=MessagePayload(content="test"),
+                ),
+                latency_ms=10,
+            )
+
+        node._execute_single_target = mock_execute
+
+        msg = Message(
+            trace_id="unique-trace-456",
+            source_node="test",
+            payload=MessagePayload(content="test"),
+        )
+        result = await node.execute(msg, execution_context)
+
+        assert result.success is True
+        assert len(captured_contexts) == 2
+
+        # Verify context was propagated correctly
+        for ctx in captured_contexts:
+            assert ctx["trace_id"] == execution_context.trace_id
+            assert ctx["graph_id"] == execution_context.graph_id
