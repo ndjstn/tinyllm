@@ -1,5 +1,7 @@
 # TinyLLM
 
+![TinyLLM](benchmarks/results/hero_banner.png)
+
 > **What if each neuron in a neural network was already intelligent?**
 
 ```mermaid
@@ -103,6 +105,11 @@ uv run tinyllm chat
 
 ## Architecture Overview
 
+![Architecture](benchmarks/results/architecture_visual.png)
+
+<details>
+<summary>View Interactive Mermaid Diagram</summary>
+
 ```mermaid
 flowchart TB
     subgraph Input["📥 Input Layer"]
@@ -169,6 +176,7 @@ flowchart TB
     class GATE quality
     class EXIT output
 ```
+</details>
 
 ### Multi-Dimensional Routing
 
@@ -302,6 +310,19 @@ graph LR
 - 128GB RAM
 - 2× RTX 3060 (24GB VRAM total)
 - AMD Ryzen 7 3700X
+
+---
+
+## Benchmarks
+
+![Performance Dashboard](benchmarks/results/performance_dashboard.png)
+
+| Metric | Value | | Metric | Value |
+|--------|-------|-|--------|-------|
+| **Success Rate** | 100% | | **Avg Latency** | 7.5s |
+| **Queries Tested** | 44 | | **Extreme Difficulty** | 11.6s |
+
+**No breaking points detected** at any difficulty level. See [detailed benchmarks](benchmarks/README.md).
 
 ---
 
