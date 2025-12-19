@@ -1,0 +1,198 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+    version: v1
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tinyllm
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: tinyllm
+        version: v1
+        component: api
+      annotations:
+        # Istio sidecar injection
+        sidecar.istio.io/inject: "true"
+
+        # Istio traffic management
+        traffic.sidecar.istio.io/includeOutboundIPRanges: "*"
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: ""
+
+        # Istio resource limits for sidecar
+        sidecar.istio.io/proxyCPU: "100m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+        sidecar.istio.io/proxyCPULimit: "200m"
+        sidecar.istio.io/proxyMemoryLimit: "256Mi"
+
+        # Istio telemetry
+        proxy.istio.io/config: |
+          tracing:
+            zipkin:
+              address: zipkin.istio-system:9411
+            sampling: 100.0
+
+        # Linkerd sidecar injection (alternative to Istio)
+        linkerd.io/inject: enabled
+
+        # Linkerd configuration
+        config.linkerd.io/proxy-cpu-request: "100m"
+        config.linkerd.io/proxy-memory-request: "128Mi"
+        config.linkerd.io/proxy-cpu-limit: "200m"
+        config.linkerd.io/proxy-memory-limit: "256Mi"
+
+        # Linkerd traffic control
+        config.linkerd.io/skip-outbound-ports: "443,6379"  # Skip Redis and HTTPS
+        config.linkerd.io/skip-inbound-ports: ""
+
+        # Linkerd timeouts
+        config.linkerd.io/default-inbound-policy: "all-authenticated"
+
+        # Prometheus scraping (works with both Istio and Linkerd)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+
+        # OpenTelemetry
+        instrumentation.opentelemetry.io/inject-python: "true"
+    spec:
+      serviceAccountName: tinyllm
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: tinyllm
+        image: tinyllm:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: TINYLLM_HOST
+          value: "0.0.0.0"
+        - name: TINYLLM_PORT
+          value: "8000"
+        - name: OLLAMA_HOST
+          value: "http://ollama:11434"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: OTLP_ENDPOINT
+          value: "http://otel-collector:4317"
+        - name: ENABLE_TELEMETRY
+          value: "true"
+        - name: LOG_LEVEL
+          value: "info"
+        # Service mesh aware configuration
+        - name: SERVICE_MESH
+          value: "istio"  # or "linkerd"
+        - name: ENABLE_MTLS
+          value: "true"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        startupProbe:
+          httpGet:
+            path: /health/startup
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: cache
+          mountPath: /app/cache
+      volumes:
+      - name: config
+        configMap:
+          name: tinyllm-config
+      - name: cache
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+    service: tinyllm
+  annotations:
+    # Istio service annotations
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+    # Linkerd service annotations
+    viz.linkerd.io/dashboard-url: "http://linkerd-web.linkerd.svc.cluster.local"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 8000
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+  selector:
+    app: tinyllm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tinyllm
+  labels:
+    name: tinyllm
+    # Istio namespace label for automatic sidecar injection
+    istio-injection: enabled
+    # Linkerd namespace annotation
+    linkerd.io/inject: enabled

@@ -1,0 +1,164 @@
+---
+# Istio VirtualService for traffic management
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+spec:
+  hosts:
+  - tinyllm
+  - tinyllm.tinyllm.svc.cluster.local
+  http:
+  - match:
+    - uri:
+        prefix: /api/v1
+    route:
+    - destination:
+        host: tinyllm
+        port:
+          number: 80
+        subset: v1
+      weight: 100
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+      retryOn: 5xx,reset,connect-failure,refused-stream
+  - match:
+    - uri:
+        prefix: /health
+    route:
+    - destination:
+        host: tinyllm
+        port:
+          number: 80
+    timeout: 5s
+---
+# Istio DestinationRule for circuit breaking and load balancing
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+spec:
+  host: tinyllm
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 2
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: x-session-id
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+    tls:
+      mode: ISTIO_MUTUAL  # Enable mTLS
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+---
+# Istio Gateway for external access
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: tinyllm-gateway
+  namespace: tinyllm
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - tinyllm.example.com
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - tinyllm.example.com
+    tls:
+      mode: SIMPLE
+      credentialName: tinyllm-tls-cert
+---
+# Istio PeerAuthentication for mTLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+spec:
+  selector:
+    matchLabels:
+      app: tinyllm
+  mtls:
+    mode: STRICT
+---
+# Istio AuthorizationPolicy for access control
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+spec:
+  selector:
+    matchLabels:
+      app: tinyllm
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/tinyllm/sa/tinyllm"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/v1/*"]
+  - to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/health/*", "/metrics"]
+---
+# Istio Telemetry for custom metrics and tracing
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+spec:
+  selector:
+    matchLabels:
+      app: tinyllm
+  tracing:
+  - providers:
+    - name: zipkin
+    randomSamplingPercentage: 100.0
+    customTags:
+      app:
+        literal:
+          value: "tinyllm"
+      version:
+        literal:
+          value: "v1"
+  metrics:
+  - providers:
+    - name: prometheus
+    overrides:
+    - match:
+        metric: ALL_METRICS
+      tagOverrides:
+        app:
+          value: "tinyllm"

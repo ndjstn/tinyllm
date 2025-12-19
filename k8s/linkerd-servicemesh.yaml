@@ -1,0 +1,164 @@
+---
+# Linkerd Server resource for configuring server-side policy
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: tinyllm-http
+  namespace: tinyllm
+spec:
+  podSelector:
+    matchLabels:
+      app: tinyllm
+  port: http
+  proxyProtocol: HTTP/1
+---
+# Linkerd ServerAuthorization for access control
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: tinyllm-api
+  namespace: tinyllm
+spec:
+  server:
+    name: tinyllm-http
+  client:
+    meshTLS:
+      serviceAccounts:
+      - name: tinyllm
+        namespace: tinyllm
+      - name: default
+        namespace: tinyllm
+---
+# Linkerd HTTPRoute for traffic splitting and routing
+apiVersion: policy.linkerd.io/v1beta3
+kind: HTTPRoute
+metadata:
+  name: tinyllm-route
+  namespace: tinyllm
+spec:
+  parentRefs:
+  - name: tinyllm
+    kind: Service
+    group: core
+    port: 80
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1
+    - headers:
+      - name: x-request-id
+        type: RegularExpression
+        value: ".*"
+    backendRefs:
+    - name: tinyllm
+      port: 80
+      weight: 100
+    timeouts:
+      request: 30s
+      backendRequest: 10s
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /health
+    backendRefs:
+    - name: tinyllm
+      port: 80
+    timeouts:
+      request: 5s
+---
+# Linkerd TrafficSplit for canary deployments
+apiVersion: split.smi-spec.io/v1alpha1
+kind: TrafficSplit
+metadata:
+  name: tinyllm-canary
+  namespace: tinyllm
+spec:
+  service: tinyllm
+  backends:
+  - service: tinyllm-stable
+    weight: 90
+  - service: tinyllm-canary
+    weight: 10
+---
+# Linkerd ServiceProfile for per-route metrics and retries
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: tinyllm.tinyllm.svc.cluster.local
+  namespace: tinyllm
+spec:
+  routes:
+  - name: generate
+    condition:
+      method: POST
+      pathRegex: /api/v1/generate
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+      isFailure: true
+    timeout: 30s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+  - name: health_check
+    condition:
+      method: GET
+      pathRegex: /health/.*
+    timeout: 5s
+  - name: metrics
+    condition:
+      method: GET
+      pathRegex: /metrics
+    timeout: 10s
+---
+# Linkerd ExternalWorkload for integrating external Ollama service
+apiVersion: workload.linkerd.io/v1beta1
+kind: ExternalWorkload
+metadata:
+  name: ollama-external
+  namespace: tinyllm
+  labels:
+    app: ollama
+spec:
+  meshTLS:
+    identity: ollama.tinyllm.serviceaccount.identity.linkerd.cluster.local
+    serverName: ollama.tinyllm.svc.cluster.local
+  ports:
+  - port: 11434
+    name: ollama-api
+  workloadIPs:
+  - ip: 10.0.0.100  # External Ollama server IP
+---
+# NetworkAuthentication for mTLS configuration
+apiVersion: policy.linkerd.io/v1alpha1
+kind: NetworkAuthentication
+metadata:
+  name: tinyllm-mesh-tls
+  namespace: tinyllm
+spec:
+  networks:
+  - cidr: 10.0.0.0/8
+    except:
+    - cidr: 10.0.0.1/32
+  meshTLS:
+    identities:
+    - "*.tinyllm.serviceaccount.identity.linkerd.cluster.local"
+---
+# MeshTLSAuthentication for strict mTLS
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: tinyllm-mtls
+  namespace: tinyllm
+spec:
+  identities:
+  - "tinyllm.tinyllm.serviceaccount.identity.linkerd.cluster.local"
+  - "*.tinyllm.serviceaccount.identity.linkerd.cluster.local"
+  identityRefs:
+  - kind: ServiceAccount
+    name: tinyllm
+    namespace: tinyllm

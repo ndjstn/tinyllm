@@ -1,0 +1,124 @@
+---
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: tinyllm
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: pod
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node
+    - sourceLabels: [__meta_kubernetes_namespace]
+      targetLabel: namespace
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'tinyllm_.*'
+      action: keep
+---
+# PodMonitor for additional metrics
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+spec:
+  selector:
+    matchLabels:
+      app: tinyllm
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tinyllm
+  namespace: tinyllm
+  labels:
+    app: tinyllm
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: tinyllm.rules
+    interval: 30s
+    rules:
+    # High error rate
+    - alert: TinyLLMHighErrorRate
+      expr: |
+        (
+          sum(rate(tinyllm_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(tinyllm_requests_total[5m]))
+        ) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate in TinyLLM"
+        description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+    # High latency
+    - alert: TinyLLMHighLatency
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate(tinyllm_request_duration_seconds_bucket[5m])) by (le)
+        ) > 5
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High latency in TinyLLM"
+        description: "95th percentile latency is {{ $value }}s"
+
+    # Service down
+    - alert: TinyLLMDown
+      expr: up{job="tinyllm"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "TinyLLM service is down"
+        description: "TinyLLM has been down for more than 5 minutes"
+
+    # Dependency health
+    - alert: TinyLLMDependencyUnhealthy
+      expr: tinyllm_dependency_health_status{status="unhealthy"} == 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "TinyLLM dependency unhealthy"
+        description: "Dependency {{ $labels.dependency }} is unhealthy"
+
+    # Cache hit rate low
+    - alert: TinyLLMCacheLowHitRate
+      expr: |
+        (
+          sum(rate(tinyllm_cache_hits_total[5m]))
+          /
+          sum(rate(tinyllm_cache_requests_total[5m]))
+        ) < 0.5
+      for: 15m
+      labels:
+        severity: info
+      annotations:
+        summary: "Low cache hit rate"
+        description: "Cache hit rate is {{ $value | humanizePercentage }}"
