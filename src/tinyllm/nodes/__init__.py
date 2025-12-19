@@ -13,6 +13,7 @@ from tinyllm.nodes.loop import LoopNode, LoopCondition, LoopConfig, LoopState, L
 from tinyllm.nodes.model import ModelNode
 from tinyllm.nodes.reasoning import ReasoningNode, ReasoningNodeConfig
 from tinyllm.nodes.router import RouterNode, RouteDefinition, CompoundRoute
+from tinyllm.nodes.timeout import TimeoutNode, TimeoutConfig, TimeoutAction, TimeoutMetrics
 from tinyllm.nodes.tool import ToolNode
 from tinyllm.nodes.transform import (
     TransformNode,
@@ -42,6 +43,10 @@ __all__ = [
     "RouterNode",
     "RouteDefinition",
     "CompoundRoute",
+    "TimeoutNode",
+    "TimeoutConfig",
+    "TimeoutAction",
+    "TimeoutMetrics",
     "ToolNode",
     "TransformNode",
     "TransformType",

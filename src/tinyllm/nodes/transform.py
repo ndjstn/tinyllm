@@ -14,9 +14,12 @@ from tinyllm.config.graph import NodeDefinition, NodeType
 from tinyllm.core.message import Message, MessagePayload
 from tinyllm.core.node import BaseNode, NodeConfig, NodeResult
 from tinyllm.core.registry import NodeRegistry
+from tinyllm.logging import get_logger
 
 if TYPE_CHECKING:
     from tinyllm.core.context import ExecutionContext
+
+logger = get_logger(__name__, component="transform_node")
 
 
 class TransformType(str, Enum):
@@ -130,6 +133,12 @@ class TransformNode(BaseNode):
         super().__init__(definition)
         self._transform_config = TransformNodeConfig(**definition.config)
         self._transforms = self._parse_transforms()
+        logger.info(
+            "transform_node_initialized",
+            node_id=self.id,
+            transforms_count=len(self._transforms),
+            stop_on_error=self._transform_config.stop_on_error,
+        )
 
     def _parse_transforms(self) -> List[TransformSpec]:
         """Parse transform specifications from config."""
@@ -157,10 +166,25 @@ class TransformNode(BaseNode):
         content = message.payload.content or message.payload.task or ""
         results: List[TransformResult] = []
 
+        logger.debug(
+            "transform_pipeline_started",
+            node_id=self.id,
+            input_length=len(content),
+            transforms_count=len(self._transforms),
+        )
+
         current_value = content
         for spec in self._transforms:
             result = self._apply_transform(current_value, spec)
             results.append(result)
+
+            logger.debug(
+                "transform_applied",
+                node_id=self.id,
+                transform_type=spec.transform_type.value,
+                success=result.success,
+                error=result.error,
+            )
 
             if not result.success:
                 if self._transform_config.stop_on_error:
@@ -185,6 +209,14 @@ class TransformNode(BaseNode):
         output_message = message.create_child(
             source_node=self.id,
             payload=output_payload,
+        )
+
+        logger.debug(
+            "transform_pipeline_completed",
+            node_id=self.id,
+            transforms_applied=len(results),
+            original_length=len(content),
+            output_length=len(current_value),
         )
 
         return NodeResult.success_result(

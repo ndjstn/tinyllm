@@ -12,6 +12,11 @@ from tinyllm.core.message import Message, MessagePayload
 from tinyllm.core.node import BaseNode, NodeConfig, NodeResult
 from tinyllm.core.registry import NodeRegistry
 from tinyllm.models.client import OllamaClient
+from tinyllm.models.fallback import (
+    FallbackClient,
+    FallbackConfig,
+    FallbackStrategy,
+)
 from tinyllm.prompts.loader import PromptLoader
 
 if TYPE_CHECKING:
@@ -43,6 +48,19 @@ class ModelNodeConfig(NodeConfig):
     tool_ids: List[str] = Field(
         default_factory=list, description="Specific tools to enable"
     )
+    # Fallback configuration
+    enable_fallback: bool = Field(
+        default=False, description="Enable model fallback on failure"
+    )
+    fallback_models: List[str] = Field(
+        default_factory=list, description="Ordered list of fallback models"
+    )
+    fallback_strategy: str = Field(
+        default="sequential", description="Fallback strategy: sequential, fastest, load_balanced"
+    )
+    fallback_timeout_ms: int = Field(
+        default=30000, description="Per-model timeout in milliseconds"
+    )
 
 
 @NodeRegistry.register(NodeType.MODEL)
@@ -58,6 +76,7 @@ class ModelNode(BaseNode):
         super().__init__(definition)
         self._model_config = ModelNodeConfig(**definition.config)
         self._client: Optional[OllamaClient] = None
+        self._fallback_client: Optional[FallbackClient] = None
         self._prompt_loader = PromptLoader()
 
     @property
@@ -71,12 +90,25 @@ class ModelNode(BaseNode):
             self._client = OllamaClient()
         return self._client
 
+    def _get_fallback_client(self) -> FallbackClient:
+        """Get or create fallback client."""
+        if self._fallback_client is None:
+            # Create fallback config from node config
+            fallback_config = FallbackConfig(
+                primary_model=self._model_config.model,
+                fallback_models=self._model_config.fallback_models,
+                timeout_ms=self._model_config.fallback_timeout_ms,
+                strategy=FallbackStrategy(self._model_config.fallback_strategy),
+            )
+            self._fallback_client = FallbackClient(config=fallback_config)
+        return self._fallback_client
+
     async def execute(
         self, message: Message, context: "ExecutionContext"
     ) -> NodeResult:
         """Execute model inference.
 
-        Processes the task using the configured LLM.
+        Processes the task using the configured LLM with optional fallback support.
 
         Args:
             message: Input message with task.
@@ -90,15 +122,39 @@ class ModelNode(BaseNode):
         system = self._get_system_prompt(message)
 
         try:
-            # Generate response
-            client = self._get_client()
-            response = await client.generate(
-                model=self._model_config.model,
-                prompt=prompt,
-                system=system,
-                temperature=self._model_config.temperature,
-                max_tokens=self._model_config.max_tokens or 2000,
-            )
+            # Use fallback client if enabled
+            if self._model_config.enable_fallback and self._model_config.fallback_models:
+                fallback_client = self._get_fallback_client()
+                result = await fallback_client.generate(
+                    prompt=prompt,
+                    system=system,
+                    temperature=self._model_config.temperature,
+                    max_tokens=self._model_config.max_tokens or 2000,
+                )
+
+                # Extract response from fallback result
+                response = result.response
+                model_used = result.model_used
+
+                # Add fallback metadata
+                extra_metadata = {
+                    "model_used": model_used,
+                    "fallback_occurred": result.fallback_occurred,
+                    "attempts": result.attempts,
+                    "total_latency_ms": result.total_latency_ms,
+                }
+            else:
+                # Standard single-model execution
+                client = self._get_client()
+                response = await client.generate(
+                    model=self._model_config.model,
+                    prompt=prompt,
+                    system=system,
+                    temperature=self._model_config.temperature,
+                    max_tokens=self._model_config.max_tokens or 2000,
+                )
+                model_used = self._model_config.model
+                extra_metadata = {}
 
             # Create output message with response
             output_payload = MessagePayload(
@@ -106,9 +162,10 @@ class ModelNode(BaseNode):
                 content=response.response,
                 metadata={
                     **message.payload.metadata,
-                    "model": self._model_config.model,
+                    "model": model_used,
                     "tokens_generated": response.eval_count,
                     "tokens_prompt": response.prompt_eval_count,
+                    **extra_metadata,
                 },
             )
 
@@ -121,9 +178,10 @@ class ModelNode(BaseNode):
                 output_messages=[output_message],
                 next_nodes=[],  # Determined by executor from edges
                 metadata={
-                    "model": self._model_config.model,
+                    "model": model_used,
                     "tokens": response.eval_count + response.prompt_eval_count,
                     "eval_duration_ms": response.eval_duration / 1_000_000,
+                    **extra_metadata,
                 },
             )
 

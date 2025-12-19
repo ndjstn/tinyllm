@@ -23,6 +23,7 @@ class NodeType(str, Enum):
     TRANSFORM = "transform"
     LOOP = "loop"
     FANOUT = "dynamic_fanout"
+    TIMEOUT = "timeout"
 
 
 class EdgeDefinition(BaseModel):
@@ -104,6 +105,10 @@ class GraphDefinition(BaseModel):
     protected: List[str] = Field(
         default_factory=list,
         description="Node IDs that cannot be pruned during expansion",
+    )
+    allow_cycles: bool = Field(
+        default=False,
+        description="Whether to allow cycles in the graph. If False, validation will error on cycles.",
     )
 
     @model_validator(mode="after")
