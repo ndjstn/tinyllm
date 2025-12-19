@@ -4,12 +4,180 @@ This module provides a structured event system for tracking important
 application events with rich context and metadata. Events are separate
 from logs and metrics, providing a third pillar of observability.
 
+The Three Pillars of Observability:
+------------------------------------
+1. **Logs**: Detailed, timestamped records of discrete events (tinyllm.logging)
+2. **Metrics**: Aggregated numerical data over time (tinyllm.metrics)
+3. **Events**: Structured business and system events with rich context (this module)
+
 Events are useful for:
 - Audit trails (who did what, when)
 - Business metrics (user signups, completions)
 - System state changes (node added, graph modified)
 - Error tracking with context
 - Performance anomalies
+
+Features:
+---------
+1. **Automatic Trace Correlation**: Events inherit trace_id and span_id from active spans
+2. **Rich Metadata**: Attach arbitrary data, tags, user/session IDs to events
+3. **Multiple Handlers**: Route events to logs, metrics, databases, or custom destinations
+4. **Buffered Storage**: Keep recent events in memory for debugging
+5. **Error Enrichment**: Capture exception details with stack traces
+
+Architecture:
+-------------
+The event system consists of:
+
+- **Event**: Immutable dataclass with structured fields
+- **EventEmitter**: Central dispatcher routing events to handlers
+- **EventHandler**: Base class for event destinations
+- **LogEventHandler**: Writes events to structured logs
+- **MetricEventHandler**: Records events as Prometheus metrics
+- **BufferedEventHandler**: Keeps recent events in memory
+
+Event Categories:
+-----------------
+Events are classified into categories for filtering and routing:
+
+- **SYSTEM**: System lifecycle events (startup, shutdown, configuration)
+- **EXECUTION**: Graph and node execution events
+- **MODEL**: Model operations (load, inference, errors)
+- **CACHE**: Cache operations (hit, miss, eviction)
+- **SECURITY**: Security events (authentication, authorization, access control)
+- **PERFORMANCE**: Performance anomalies and optimization events
+- **USER**: User actions and interactions
+- **INTEGRATION**: External system integration events
+- **DATA**: Data operations (validation, transformation, storage)
+
+Event Severities:
+-----------------
+- **DEBUG**: Detailed information for debugging
+- **INFO**: Informational events (normal operation)
+- **WARNING**: Warning conditions that should be monitored
+- **ERROR**: Error conditions requiring attention
+- **CRITICAL**: Critical failures requiring immediate action
+
+Usage:
+------
+Basic event emission:
+
+    >>> from tinyllm.events import emit_event, EventCategory, EventSeverity
+    >>>
+    >>> # Emit a simple event
+    >>> event = emit_event(
+    ...     event_type="node.execution.completed",
+    ...     category=EventCategory.EXECUTION,
+    ...     severity=EventSeverity.INFO,
+    ...     message="Node execution completed successfully",
+    ...     data={"node_id": "router", "duration_ms": 123}
+    ... )
+    >>>
+    >>> print(f"Event ID: {event.event_id}")
+
+Convenience functions:
+
+    >>> from tinyllm.events import emit_system_event, emit_error_event
+    >>>
+    >>> # System events
+    >>> emit_system_event("Application started", data={"version": "0.1.0"})
+    >>>
+    >>> # Error events with exception details
+    >>> try:
+    ...     raise ValueError("Invalid configuration")
+    ... except ValueError as e:
+    ...     emit_error_event(
+    ...         "Configuration validation failed",
+    ...         error=e,
+    ...         category=EventCategory.SYSTEM
+    ...     )
+
+Custom event handlers:
+
+    >>> from tinyllm.events import EventHandler, get_event_emitter
+    >>>
+    >>> class DatabaseEventHandler(EventHandler):
+    ...     def handle(self, event):
+    ...         # Write event to database
+    ...         db.events.insert(event.to_dict())
+    >>>
+    >>> # Register handler
+    >>> emitter = get_event_emitter()
+    >>> emitter.add_handler(DatabaseEventHandler())
+
+Buffered events for debugging:
+
+    >>> from tinyllm.events import BufferedEventHandler, get_event_emitter
+    >>>
+    >>> # Add buffer handler
+    >>> buffer = BufferedEventHandler(max_size=100)
+    >>> emitter = get_event_emitter()
+    >>> emitter.add_handler(buffer)
+    >>>
+    >>> # Get recent events
+    >>> recent = buffer.get_events(limit=10)
+    >>> errors = buffer.get_events(severity=EventSeverity.ERROR)
+
+Trace correlation:
+
+    >>> from tinyllm.events import emit_event, EventCategory, EventSeverity
+    >>> from tinyllm.telemetry import trace_span
+    >>>
+    >>> # Events emitted within trace spans automatically include trace_id
+    >>> with trace_span("process_request"):
+    ...     event = emit_event(
+    ...         "request.processed",
+    ...         category=EventCategory.EXECUTION,
+    ...         severity=EventSeverity.INFO,
+    ...         message="Request processed"
+    ...     )
+    ...     # event.trace_id and event.span_id are set automatically
+
+Event serialization:
+
+    >>> event = Event(
+    ...     event_type="deployment.completed",
+    ...     category=EventCategory.SYSTEM,
+    ...     severity=EventSeverity.INFO,
+    ...     message="Deployment successful",
+    ...     data={"environment": "production", "version": "1.2.3"},
+    ...     tags=["deployment", "production"]
+    ... )
+    >>>
+    >>> # Serialize to dict (for JSON, databases, etc.)
+    >>> event_dict = event.to_dict()
+    >>> print(event_dict["event_type"])  # "deployment.completed"
+
+Best Practices:
+---------------
+1. **Use descriptive event types**: Format as "category.action.status" (e.g., "node.execution.completed")
+2. **Include relevant data**: Add context in the data field, not in the message
+3. **Choose appropriate severity**: INFO for normal operations, ERROR for failures
+4. **Add tags for filtering**: Use tags to categorize events beyond the category enum
+5. **Leverage trace correlation**: Emit events within trace spans for end-to-end visibility
+
+Performance:
+------------
+- Event emission is asynchronous and non-blocking
+- Handler failures don't affect other handlers or application flow
+- Buffered handlers use circular buffers for memory efficiency
+- Metric handlers are optimized for high-throughput scenarios
+
+Integration:
+------------
+Events can be routed to:
+- Structured logs (always enabled by default)
+- Prometheus metrics (via MetricEventHandler)
+- Databases (custom handler)
+- Message queues (custom handler)
+- Analytics platforms (custom handler)
+- Notification systems (custom handler)
+
+See Also:
+---------
+- tinyllm.logging: Structured logging with trace correlation
+- tinyllm.metrics: Prometheus metrics for quantitative monitoring
+- tinyllm.telemetry: Distributed tracing with OpenTelemetry
 """
 
 import time
