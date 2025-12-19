@@ -1,85 +1,90 @@
-name: Model Benchmarks
+name: Benchmarks
 
 on:
   workflow_dispatch:
     inputs:
-      models:
-        description: 'Models to benchmark (comma-separated)'
-        required: false
-        default: 'qwen2.5:0.5b,qwen2.5:3b'
-      tasks:
-        description: 'Tasks to run (comma-separated)'
-        required: false
-        default: 'routing,code,math'
+      run_adversarial:
+        description: 'Run adversarial tests'
+        type: boolean
+        default: true
+      run_stress:
+        description: 'Run stress tests'
+        type: boolean
+        default: true
   schedule:
-    # Run weekly on Sunday at midnight
+    # Run weekly on Sunday at midnight UTC
     - cron: '0 0 * * 0'
 
 jobs:
   benchmark:
-    name: Run Benchmarks
-    runs-on: self-hosted  # Requires self-hosted runner with GPU
-    timeout-minutes: 120
+    name: Performance & Adversarial Tests
+    runs-on: self-hosted
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --dev
 
       - name: Check Ollama
         run: |
-          curl -s http://localhost:11434/api/tags | jq '.models[].name'
+          curl -s http://localhost:11434/api/tags | jq '.models[].name' || echo "Ollama not detected"
 
-      - name: Run benchmarks
-        run: |
-          mkdir -p benchmark_results
-          python -m tinyllm.benchmark \
-            --models "${{ github.event.inputs.models || 'qwen2.5:0.5b,qwen2.5:3b' }}" \
-            --tasks "${{ github.event.inputs.tasks || 'routing,code,math' }}" \
-            --output benchmark_results/results.json
+      - name: Run standard benchmarks
+        run: uv run python benchmarks/run_benchmarks.py
+        timeout-minutes: 30
 
-      - name: Generate report
-        run: |
-          python -m tinyllm.benchmark.report \
-            --input benchmark_results/results.json \
-            --output benchmark_results/report.md
+      - name: Run stress tests
+        if: ${{ github.event.inputs.run_stress != 'false' }}
+        run: uv run python benchmarks/stress_test.py
+        timeout-minutes: 60
 
-      - name: Get hardware info
+      - name: Run adversarial tests
+        if: ${{ github.event.inputs.run_adversarial != 'false' }}
+        run: uv run python benchmarks/adversarial_test.py
+        timeout-minutes: 60
+
+      - name: Run tool comparison
+        run: uv run python benchmarks/tool_comparison.py
+        timeout-minutes: 30
+
+      - name: Generate visualizations
+        run: uv run python benchmarks/create_visuals.py
+
+      - name: Check adversarial thresholds
         run: |
-          echo "## Hardware Configuration" > benchmark_results/hardware.md
-          echo "" >> benchmark_results/hardware.md
-          echo "- **CPU**: $(lscpu | grep 'Model name' | cut -d':' -f2 | xargs)" >> benchmark_results/hardware.md
-          echo "- **RAM**: $(free -h | grep Mem | awk '{print $2}')" >> benchmark_results/hardware.md
-          echo "- **GPU**: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo 'N/A')" >> benchmark_results/hardware.md
-          echo "- **VRAM**: $(nvidia-smi --query-gpu=memory.total --format=csv,noheader 2>/dev/null | head -1 || echo 'N/A')" >> benchmark_results/hardware.md
-          cat benchmark_results/hardware.md
+          PASS_RATE=$(python -c "import json; d=json.load(open('benchmarks/results/adversarial_test.json')); print(d['summary']['pass_rate'])")
+          echo "Adversarial pass rate: $PASS_RATE%"
+          echo "ADVERSARIAL_PASS_RATE=$PASS_RATE" >> $GITHUB_ENV
+
+          if (( $(echo "$PASS_RATE < 40" | bc -l) )); then
+            echo "::warning::Adversarial pass rate below 40%"
+          fi
+
+      - name: Generate summary
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Adversarial Pass Rate | $ADVERSARIAL_PASS_RATE% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Run Date | $(date -u +%Y-%m-%d) |" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-${{ github.run_number }}
-          path: benchmark_results/
+          path: benchmarks/results/
 
-      - name: Post results to PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const report = fs.readFileSync('benchmark_results/report.md', 'utf8');
-            const hardware = fs.readFileSync('benchmark_results/hardware.md', 'utf8');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## Benchmark Results\n\n${hardware}\n\n${report}`
-            });
+      - name: Commit results to repo
+        if: github.event_name == 'schedule'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results/
+          git diff --cached --quiet || git commit -m "chore: update benchmark results [skip ci]"
+          git push || echo "Nothing to push"
