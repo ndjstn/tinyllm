@@ -1,0 +1,122 @@
+# Code Quality Judge Prompt
+# Specialized for evaluating code generation responses
+
+id: grading/code_judge
+name: Code Quality Judge
+version: "1.0.0"
+description: Evaluates code generation quality with focus on correctness and best practices
+
+model_requirements:
+  min_tier: 3
+  capabilities:
+    - code_understanding
+    - reasoning
+    - structured_output
+
+system_prompt: |
+  You are an expert code reviewer evaluating AI-generated code.
+
+  Your role is to:
+  1. Verify the code solves the stated problem
+  2. Check for bugs, edge cases, and errors
+  3. Evaluate code quality and best practices
+  4. Assess readability and documentation
+
+  Code Quality Guidelines:
+  - 0.9-1.0: Production-ready, excellent practices
+  - 0.75-0.89: Good code, minor improvements possible
+  - 0.6-0.74: Functional but has issues
+  - 0.4-0.59: Significant bugs or poor practices
+  - 0.0-0.39: Non-functional or dangerous code
+
+  Focus on:
+  - Correctness (does it work?)
+  - Error handling (edge cases covered?)
+  - Efficiency (reasonable complexity?)
+  - Readability (clear naming, structure?)
+  - Security (no obvious vulnerabilities?)
+
+user_template: |
+  Please evaluate the following code response.
+
+  ## Task
+  {{ task }}
+
+  ## Code to Evaluate
+  ```{{ language | default('python') }}
+  {{ response }}
+  ```
+
+  {% if expected %}
+  ## Expected Behavior
+  {{ expected }}
+  {% endif %}
+
+  {% if test_cases %}
+  ## Test Cases
+  {% for test in test_cases %}
+  - Input: {{ test.input }} → Expected: {{ test.expected }}
+  {% endfor %}
+  {% endif %}
+
+  ## Evaluation Dimensions
+  - correctness: Does the code correctly solve the problem?
+  - code_quality: Is it well-written following best practices?
+  - completeness: Does it handle edge cases?
+  - clarity: Is it readable and well-documented?
+
+  Respond in JSON format:
+  ```json
+  {
+      "dimensions": [
+          {"dimension": "correctness", "score": 0.8, "reasoning": "...", "evidence": "..."},
+          {"dimension": "code_quality", "score": 0.7, "reasoning": "...", "evidence": "..."},
+          {"dimension": "completeness", "score": 0.6, "reasoning": "...", "evidence": "..."},
+          {"dimension": "clarity", "score": 0.8, "reasoning": "...", "evidence": "..."}
+      ],
+      "feedback": "Overall code quality assessment...",
+      "suggestions": ["suggestion 1", "suggestion 2"],
+      "bugs_found": ["bug description if any"],
+      "security_issues": ["security issue if any"]
+  }
+  ```
+
+output_schema:
+  type: object
+  properties:
+    dimensions:
+      type: array
+    feedback:
+      type: string
+    suggestions:
+      type: array
+    bugs_found:
+      type: array
+    security_issues:
+      type: array
+
+examples:
+  - input:
+      task: "Write a function to check if a number is prime"
+      response: |
+        def is_prime(n):
+            if n < 2:
+                return False
+            for i in range(2, int(n**0.5) + 1):
+                if n % i == 0:
+                    return False
+            return True
+      language: python
+    output: |
+      {
+        "dimensions": [
+          {"dimension": "correctness", "score": 1.0, "reasoning": "Algorithm correctly identifies primes using optimized trial division", "evidence": "Checks divisibility up to sqrt(n)"},
+          {"dimension": "code_quality", "score": 0.9, "reasoning": "Clean implementation, could add type hints", "evidence": "Clear variable names, efficient algorithm"},
+          {"dimension": "completeness", "score": 0.95, "reasoning": "Handles edge cases (n < 2)", "evidence": "if n < 2: return False"},
+          {"dimension": "clarity", "score": 0.85, "reasoning": "Simple and readable, could use docstring", "evidence": "Self-explanatory code structure"}
+        ],
+        "feedback": "Excellent implementation of prime checking with optimal time complexity O(sqrt(n)).",
+        "suggestions": ["Add type hints: def is_prime(n: int) -> bool:", "Add docstring explaining the algorithm"],
+        "bugs_found": [],
+        "security_issues": []
+      }

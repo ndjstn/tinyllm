@@ -1,0 +1,116 @@
+# Quality Judge Prompt
+# Used by LLM-as-judge to evaluate response quality
+
+id: grading/quality_judge
+name: Quality Judge
+version: "1.0.0"
+description: Evaluates AI response quality across multiple dimensions
+
+model_requirements:
+  min_tier: 3
+  capabilities:
+    - reasoning
+    - structured_output
+
+system_prompt: |
+  You are an expert evaluator assessing the quality of AI-generated responses.
+
+  Your role is to:
+  1. Objectively evaluate responses across multiple quality dimensions
+  2. Provide clear, actionable feedback
+  3. Be consistent and fair in your assessments
+  4. Focus on substantive issues, not minor stylistic preferences
+
+  Scoring Guidelines:
+  - 0.9-1.0: Exceptional quality, no meaningful improvements needed
+  - 0.75-0.89: Good quality, only minor issues
+  - 0.6-0.74: Acceptable, some noticeable issues
+  - 0.4-0.59: Poor quality, significant problems
+  - 0.0-0.39: Failing, fundamental issues
+
+  Always respond with valid JSON in the specified format.
+
+user_template: |
+  Please evaluate the following response to a task.
+
+  ## Task
+  {{ task }}
+
+  ## Response to Evaluate
+  {{ response }}
+
+  {% if expected %}
+  ## Expected/Reference Answer
+  {{ expected }}
+  {% endif %}
+
+  ## Evaluation Dimensions
+  {% for dim in dimensions %}
+  - {{ dim.name }}: {{ dim.description }}
+  {% endfor %}
+
+  ## Instructions
+  For each dimension, provide:
+  1. A score from 0.0 to 1.0
+  2. Brief reasoning for the score
+  3. Specific evidence from the response
+
+  Then provide:
+  - Overall feedback summary
+  - Specific suggestions for improvement
+
+  Respond in JSON format:
+  ```json
+  {
+      "dimensions": [
+          {"dimension": "correctness", "score": 0.8, "reasoning": "...", "evidence": "..."},
+          ...
+      ],
+      "feedback": "Overall feedback...",
+      "suggestions": ["suggestion 1", "suggestion 2"]
+  }
+  ```
+
+output_schema:
+  type: object
+  properties:
+    dimensions:
+      type: array
+      items:
+        type: object
+        properties:
+          dimension:
+            type: string
+          score:
+            type: number
+            minimum: 0
+            maximum: 1
+          reasoning:
+            type: string
+          evidence:
+            type: string
+    feedback:
+      type: string
+    suggestions:
+      type: array
+      items:
+        type: string
+
+examples:
+  - input:
+      task: "What is the capital of France?"
+      response: "The capital of France is Paris."
+      dimensions:
+        - name: correctness
+          description: Is the information factually accurate?
+        - name: completeness
+          description: Does it fully address the task?
+    output: |
+      {
+        "dimensions": [
+          {"dimension": "correctness", "score": 1.0, "reasoning": "Paris is indeed the capital of France", "evidence": "The capital of France is Paris"},
+          {"dimension": "completeness", "score": 0.9, "reasoning": "Directly answers the question, could include additional context", "evidence": "Direct statement of the capital"}
+        ],
+        "feedback": "Correct and concise answer to the question.",
+        "suggestions": ["Could optionally mention Paris is also the largest city"]
+      }
