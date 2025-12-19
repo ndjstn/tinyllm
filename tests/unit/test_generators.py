@@ -114,10 +114,10 @@ class TestNodeGenerator:
         """Test generating node with custom ID."""
         node_def = NodeGenerator.generate(
             NodeType.MODEL,
-            node_id="custom-node",
+            node_id="custom.node",
         )
 
-        assert node_def.id == "custom-node"
+        assert node_def.id == "custom.node"
 
     def test_generate_node_with_config(self):
         """Test generating node with custom config."""

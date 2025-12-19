@@ -25,7 +25,7 @@ from tinyllm.logging import get_logger
 logger = get_logger(__name__, component="error_notifications")
 
 
-class NotificationChannel(str, Enum):
+class NotificationChannelType(str, Enum):
     """Notification channel types."""
 
     WEBHOOK = "webhook"
@@ -49,7 +49,7 @@ class NotificationConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
     # Channel settings
-    channel: NotificationChannel = Field(description="Channel type")
+    channel: NotificationChannelType = Field(description="Channel type")
     enabled: bool = Field(default=True, description="Whether channel is enabled")
 
     # Filtering
