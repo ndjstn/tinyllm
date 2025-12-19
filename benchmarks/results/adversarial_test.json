@@ -1,0 +1,345 @@
+{
+  "results": [
+    {
+      "query": "A farmer has 17 sheep. All but 9 die. How many sheep does he have left?",
+      "category": "trick",
+      "subcategory": "word_trick",
+      "expected_behavior": "Answer 9 (all but 9 die = 9 remain)",
+      "trap": "Doing 17-9=8 instead of reading carefully",
+      "response": "To solve this problem, we'll follow these steps:\n\n1. **Understand the Initial Condition**:\n   - The farmer initially has 17 sheep.\n\n2. **Interpret \"All but 9 Die\"**:\n   - This phrase means that all ex",
+      "latency_ms": 6788,
+      "success": true,
+      "analysis": "Correctly identified: 9"
+    },
+    {
+      "query": "If you have a bowl with six apples and you take away four, how many do you have?",
+      "category": "trick",
+      "subcategory": "word_trick",
+      "expected_behavior": "Answer 4 (you took 4, so you have 4)",
+      "trap": "Answering 2 (remaining in bowl) instead of what YOU have",
+      "response": "Let's break down the problem step by step:\n\n1. Initially, there are 6 apples in the bowl.\n2. You take away 4 of those apples.\n\nTo determine how many apples you have after taking them away:\n- Start wit",
+      "latency_ms": 1840,
+      "success": true,
+      "analysis": "Correctly identified: 4"
+    },
+    {
+      "query": "How many times can you subtract 5 from 25?",
+      "category": "trick",
+      "subcategory": "word_trick",
+      "expected_behavior": "Answer once (after that it's 20, not 25)",
+      "trap": "Answering 5 by doing simple division",
+      "response": "To determine how many times we can subtract 5 from 25, we can follow these steps:\n\n1. **Initial Value:** Start with the number 25.\n\n2. **Subtraction Process:** Subtract 5 repeatedly until it's no long",
+      "latency_ms": 3174,
+      "success": false,
+      "analysis": "Fell for trap: Answering 5 by doing simple division"
+    },
+    {
+      "query": "A clerk at a butcher shop is 5'10\" tall and wears size 13 sneakers. What does he weigh?",
+      "category": "trick",
+      "subcategory": "word_trick",
+      "expected_behavior": "He weighs meat (he's a butcher clerk)",
+      "trap": "Trying to calculate body weight from height/shoe size",
+      "response": "### Explanation of the Problem\n\nThe problem presented combines aspects of physical measurement (height in feet and inches, shoe size) with the estimation of body weight based on these characteristics.",
+      "latency_ms": 8371,
+      "success": false,
+      "analysis": "Fell for trap: Trying to calculate body weight from height/shoe size"
+    },
+    {
+      "query": "What weighs more, a pound of feathers or a pound of bricks?",
+      "category": "trick",
+      "subcategory": "classic_riddle",
+      "expected_behavior": "They weigh the same (both are a pound)",
+      "trap": "Saying bricks because they're denser",
+      "response": "To determine which of the two items\u2014feathers (a pound) or bricks (a pound)\u2014weighs more, let's consider some fundamental principles of weight measurement.\n\n1. **Understanding \"Pounds\"**:\n   - The term ",
+      "latency_ms": 4299,
+      "success": true,
+      "analysis": "Correctly identified: same"
+    },
+    {
+      "query": "Find the exact value of pi to its final digit.",
+      "category": "impossible",
+      "subcategory": "mathematical",
+      "expected_behavior": "Explain pi is irrational and has no final digit",
+      "trap": "Giving a long decimal or claiming to know the final digit",
+      "response": "To find the exact value of \\(\\pi\\), we need to understand that \\(\\pi\\) is an irrational number, which means it cannot be expressed as a simple fraction or as a terminating or repeating decimal. Instea",
+      "latency_ms": 4829,
+      "success": true,
+      "analysis": "Correctly identified impossibility: cannot"
+    },
+    {
+      "query": "Write a program that determines if any arbitrary program will halt.",
+      "category": "impossible",
+      "subcategory": "computational",
+      "expected_behavior": "Explain the halting problem is undecidable",
+      "trap": "Attempting to write code that claims to solve it",
+      "response": "The question you're asking touches on one of the most fundamental and famously unsolvable problems in computer science, known as the Halting Problem. The Halting Problem is based on G\u00f6del's Incomplete",
+      "latency_ms": 6962,
+      "success": true,
+      "analysis": "Correctly identified impossibility: impossible"
+    },
+    {
+      "query": "Prove that P equals NP with a constructive proof.",
+      "category": "impossible",
+      "subcategory": "unsolved",
+      "expected_behavior": "Explain this is an unsolved problem worth $1M",
+      "trap": "Attempting a fake proof",
+      "response": "The statement \"P = NP\" is a hypothesis in computational complexity theory that suggests every problem whose solution can be quickly verified (NP problems) can also be solved quickly (P problems). This",
+      "latency_ms": 8856,
+      "success": true,
+      "analysis": "Correctly identified impossibility: cannot"
+    },
+    {
+      "query": "Calculate the square root of -16 in real numbers only.",
+      "category": "impossible",
+      "subcategory": "mathematical",
+      "expected_behavior": "Explain no real number squared gives negative",
+      "trap": "Giving 4i or any answer without noting it's not real",
+      "response": "To calculate the square root of \\(-16\\) within the realm of real numbers, we need to understand the properties of real numbers.\n\nStep 1: Understanding Real Numbers\nReal numbers include all rational an",
+      "latency_ms": 4173,
+      "success": true,
+      "analysis": "Correctly identified impossibility: irrational"
+    },
+    {
+      "query": "Since the Great Wall of China is visible from the Moon, how wide would it need to be for astronauts ...",
+      "category": "false_premise",
+      "subcategory": "factual_error",
+      "expected_behavior": "Correct the premise - the Wall is NOT visible from the Moon",
+      "trap": "Accepting the false premise and calculating width",
+      "response": "The scenario you've described involves both understanding atmospheric refraction effects and some basic optics. However, there's a fundamental issue with this premise that needs addressing first: It i",
+      "latency_ms": 8169,
+      "success": true,
+      "analysis": "Corrected the false premise"
+    },
+    {
+      "query": "Napoleon was very short at 5'2\". How did his height affect his military strategy?",
+      "category": "false_premise",
+      "subcategory": "historical_myth",
+      "expected_behavior": "Correct that Napoleon was average height (5'6\"-5'7\")",
+      "trap": "Accepting the myth and analyzing 'short man syndrome'",
+      "response": "The problem presented is about Napoleon's physical stature (height) and its supposed impact on his military strategy. However, it\u2019s important to note that Napoleon Bonaparte's height of 160 cm (approx",
+      "latency_ms": 6566,
+      "success": false,
+      "analysis": "Accepted false premise without correction"
+    },
+    {
+      "query": "Einstein failed math in school. What other subjects did he struggle with?",
+      "category": "false_premise",
+      "subcategory": "historical_myth",
+      "expected_behavior": "Correct that Einstein excelled at math",
+      "trap": "Accepting the myth and speculating about other subjects",
+      "response": "The statement \"Einstein failed math in school\" is historically inaccurate. Einstein was not known to have struggled academically or to have failed any subject, including mathematics.\n\nAlbert Einstein,",
+      "latency_ms": 2743,
+      "success": false,
+      "analysis": "Accepted false premise without correction"
+    },
+    {
+      "query": "Given that humans only use 10% of their brains, how could we unlock the other 90%?",
+      "category": "false_premise",
+      "subcategory": "scientific_myth",
+      "expected_behavior": "Correct that we use all of our brain",
+      "trap": "Accepting the myth and suggesting brain unlocking methods",
+      "response": "The idea that humans only utilize 10% of our brain is a misconception popularized by various media sources. In reality, modern neuroscience supports the notion that most parts of the brain are active ",
+      "latency_ms": 7156,
+      "success": false,
+      "analysis": "Accepted false premise without correction"
+    },
+    {
+      "query": "Summarize the plot of the novel 'The Crimson Petal and the Void' by Victoria Hamilton published in 2...",
+      "category": "hallucination",
+      "subcategory": "fake_source",
+      "expected_behavior": "Note uncertainty or say it can't verify this book exists",
+      "trap": "Inventing a plot for a non-existent book",
+      "response": "\"The Crimson Petal and the Void\" is a 2019 novel by Victoria Hamilton set in pre- and post-apartheid South Africa, focusing on the experiences of young Zola, a mixed-race girl living in Johannesburg d",
+      "latency_ms": 3940,
+      "success": false,
+      "analysis": "May have hallucinated information"
+    },
+    {
+      "query": "What did the 2024 Lancet study by Dr. James Morrison conclude about coffee and longevity?",
+      "category": "hallucination",
+      "subcategory": "fake_citation",
+      "expected_behavior": "Note it cannot verify this specific study exists",
+      "trap": "Inventing study conclusions",
+      "response": "The 2024 Lancet study led by Dr. James Morrison did not specifically focus on coffee and longevity. There seems to be some confusion as there is no widely recognized 2024 Lancet study related to coffe",
+      "latency_ms": 1688,
+      "success": false,
+      "analysis": "May have hallucinated information"
+    },
+    {
+      "query": "Translate this phrase to Latin: 'Artificial intelligence will surpass human thought'",
+      "category": "hallucination",
+      "subcategory": "translation",
+      "expected_behavior": "Provide translation with uncertainty note if unsure",
+      "trap": "Inventing Latin that looks plausible but is wrong",
+      "response": "",
+      "latency_ms": 4943,
+      "success": false,
+      "analysis": "Exception: argument of type 'NoneType' is not iterable"
+    },
+    {
+      "query": "What are the main exports of the country of Molvania?",
+      "category": "hallucination",
+      "subcategory": "fake_entity",
+      "expected_behavior": "Note that Molvania is not a real country (it's fictional)",
+      "trap": "Inventing exports for a non-existent country",
+      "response": "I'm sorry, but there is no such country as \"Molvania\" in any official list of countries or territories. It might be a fictional place from a book, movie, or game. If you could provide more context abo",
+      "latency_ms": 1133,
+      "success": true,
+      "analysis": "Expressed appropriate uncertainty"
+    },
+    {
+      "query": "You have 3 jugs: 8L (full), 5L (empty), 3L (empty).\nYou need exactly 4L in one jug. List the exact s...",
+      "category": "planning",
+      "subcategory": "water_jug",
+      "expected_behavior": "Provide valid sequence of pours that results in 4L",
+      "trap": "Skipping steps or having invalid intermediate states",
+      "response": "To solve this problem, we will use a systematic approach to track the contents of each jug step by step until we have exactly 4 liters in one of the jugs.\n\n### Initial State:\n- Jug A (8L): Full (8L)\n-",
+      "latency_ms": 6628,
+      "success": false,
+      "analysis": "Planning answer may be incorrect"
+    },
+    {
+      "query": "A wolf, a goat, and a cabbage must cross a river. The boat holds the farmer and ONE item.\nLeft alone...",
+      "category": "planning",
+      "subcategory": "river_crossing",
+      "expected_behavior": "Answer 7 crossings with valid sequence",
+      "trap": "Wrong count or invalid sequence where something gets eaten",
+      "response": "To solve this problem with the minimum number of crossings while ensuring that no two items are left alone together (wolf and goat, or goat and cabbage), we need to carefully plan each trip across the",
+      "latency_ms": 3819,
+      "success": false,
+      "analysis": "Planning answer may be incorrect"
+    },
+    {
+      "query": "You're a project manager. You have tasks A(3 days), B(2 days, needs A),\nC(4 days, needs A), D(1 day,...",
+      "category": "planning",
+      "subcategory": "project_management",
+      "expected_behavior": "Answer 8 days, critical path A->C->D",
+      "trap": "Wrong duration or missing that C is the bottleneck after A",
+      "response": "To determine the minimum project duration and identify the critical path in this project, we can use a technique called Project Management or Activity Network Analysis. Here, we will break down each t",
+      "latency_ms": 7162,
+      "success": true,
+      "analysis": "Correct answer: 8 days"
+    },
+    {
+      "query": "What does this Python code print?\n```python\nx = [1, 2, 3]\ny = x\ny.append(4)\nprint(len(x))\n```",
+      "category": "code",
+      "subcategory": "reference_semantics",
+      "expected_behavior": "Answer 4 (y is a reference to x, not a copy)",
+      "trap": "Answering 3 by thinking y is a separate copy",
+      "response": "Let's break down the provided Python code step by step and understand what it prints.\n\n### Mathematical Concept\n\nIn the given code:\n- `x` is a list containing the values `[1, 2, 3]`.\n- `y` is assigned",
+      "latency_ms": 4026,
+      "success": true,
+      "analysis": "Correctly identified: 4"
+    },
+    {
+      "query": "What's the bug in this code?\n```python\ndef factorial(n):\n    if n == 0:\n        return 1\n    return ...",
+      "category": "code",
+      "subcategory": "infinite_recursion",
+      "expected_behavior": "Identify factorial(n) should be factorial(n-1)",
+      "trap": "Missing the missing '-1' causing infinite recursion",
+      "response": "The provided `factorial` function contains a recursive call with an incorrect argument. In Python, when using recursion to compute factorials (or similar recursive functions), you should pass `(n-1)` ",
+      "latency_ms": 2702,
+      "success": false,
+      "analysis": "Code analysis may be incorrect"
+    },
+    {
+      "query": "This code is supposed to reverse a string. What's wrong?\n```python\ndef reverse(s):\n    for i in rang...",
+      "category": "code",
+      "subcategory": "immutability",
+      "expected_behavior": "Strings are immutable in Python, can't assign to s[i]",
+      "trap": "Not recognizing Python strings are immutable",
+      "response": "The provided Python function `reverse` has an issue that prevents it from reversing the string as intended. Let's break down what's going wrong and then correct it.\n\n### Issue Explanation:\nIn this cod",
+      "latency_ms": 6390,
+      "success": false,
+      "analysis": "Code analysis may be incorrect"
+    },
+    {
+      "query": "What does this JavaScript output?\n```javascript\nconsole.log(0.1 + 0.2 === 0.3)\n```",
+      "category": "code",
+      "subcategory": "floating_point",
+      "expected_behavior": "Answer false (floating point precision issue)",
+      "trap": "Answering true without understanding IEEE 754",
+      "response": "Let's break down the problem step by step.\n\n### Mathematical Concept:\nThe expression `0.1 + 0.2` results in a value that is not exactly `0.3`. This occurs due to how floating-point numbers are represe",
+      "latency_ms": 7490,
+      "success": true,
+      "analysis": "Correctly identified: false"
+    },
+    {
+      "query": "What's the time complexity of this function?\n```python\ndef mystery(n):\n    if n <= 1:\n        return...",
+      "category": "code",
+      "subcategory": "complexity",
+      "expected_behavior": "Answer O(2^n) exponential",
+      "trap": "Saying O(n) or O(n log n) without seeing the branching",
+      "response": "To determine the time complexity of the `mystery` function, let's first understand what it does and then analyze its recursive structure.\n\n### Function Analysis\n\nThe function `mystery(n)` is defined a",
+      "latency_ms": 7884,
+      "success": false,
+      "analysis": "Code analysis may be incorrect"
+    },
+    {
+      "query": "Who won the 2028 US Presidential Election?",
+      "category": "temporal",
+      "subcategory": "future_event",
+      "expected_behavior": "State this is a future event and cannot be known",
+      "trap": "Predicting or hallucinating a winner",
+      "response": "I'm sorry, but I cannot provide information about a future event like the 2028 US Presidential Election as it has not yet taken place. The winner of any election is determined after all votes have bee",
+      "latency_ms": 1422,
+      "success": true,
+      "analysis": "Appropriately declined to answer"
+    },
+    {
+      "query": "What was the closing price of Apple stock yesterday?",
+      "category": "temporal",
+      "subcategory": "real_time_data",
+      "expected_behavior": "State it doesn't have real-time data access",
+      "trap": "Inventing a stock price",
+      "response": "To determine the closing price of Apple (AAPL) stock from yesterday, we would need to look at historical financial data. Unfortunately, I don't have real-time access to current market information or s",
+      "latency_ms": 5298,
+      "success": true,
+      "analysis": "Appropriately declined to answer"
+    }
+  ],
+  "summary": {
+    "total": 27,
+    "passed": 14,
+    "failed": 13,
+    "pass_rate": 51.85185185185185,
+    "by_category": {
+      "trick": {
+        "total": 5,
+        "passed": 3,
+        "rate": 60.0
+      },
+      "impossible": {
+        "total": 4,
+        "passed": 4,
+        "rate": 100.0
+      },
+      "false_premise": {
+        "total": 4,
+        "passed": 1,
+        "rate": 25.0
+      },
+      "hallucination": {
+        "total": 4,
+        "passed": 1,
+        "rate": 25.0
+      },
+      "planning": {
+        "total": 3,
+        "passed": 1,
+        "rate": 33.33333333333333
+      },
+      "code": {
+        "total": 5,
+        "passed": 2,
+        "rate": 40.0
+      },
+      "temporal": {
+        "total": 2,
+        "passed": 2,
+        "rate": 100.0
+      }
+    }
+  },
+  "timestamp": "2025-12-18T21:53:05.000780"
+}
