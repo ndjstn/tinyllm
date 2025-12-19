@@ -15,12 +15,13 @@ from tinyllm.metrics import (
 
 
 @pytest.fixture
-def metrics_collector() -> Generator[MetricsCollector, None, None]:
-    """Provide a fresh metrics collector for each test."""
-    # Note: MetricsCollector is a singleton, so we get the same instance
-    collector = get_metrics_collector()
-    yield collector
-    # Metrics persist across tests due to singleton pattern
+def metrics_collector(isolated_metrics_collector: MetricsCollector) -> MetricsCollector:
+    """Provide a fresh metrics collector for each test.
+
+    Uses the isolated_metrics_collector fixture from conftest to ensure
+    clean state between tests.
+    """
+    return isolated_metrics_collector
 
 
 class TestMetricsCollector:
@@ -37,30 +38,22 @@ class TestMetricsCollector:
 
     def test_increment_request_count(self, metrics_collector: MetricsCollector) -> None:
         """Test request counter increments."""
-        # Get initial value
-        before = sum(
-            sample.value
-            for metric in REGISTRY.collect()
-            if metric.name == "tinyllm_requests_total"
-            for sample in metric.samples
-            if sample.labels.get("model") == "test_model"
-        )
-
         # Increment counter
         metrics_collector.increment_request_count(
             model="test_model", graph="test_graph", request_type="generate"
         )
 
-        # Check it increased
-        after = sum(
-            sample.value
-            for metric in REGISTRY.collect()
-            if metric.name == "tinyllm_requests_total"
-            for sample in metric.samples
-            if sample.labels.get("model") == "test_model"
-        )
+        # Check that metric was recorded with value >= 1
+        found = False
+        for metric in REGISTRY.collect():
+            if metric.name == "tinyllm_requests_total":
+                for sample in metric.samples:
+                    if sample.labels.get("model") == "test_model":
+                        assert sample.value >= 1
+                        found = True
+                        break
 
-        assert after > before
+        assert found, "Metric tinyllm_requests_total with model=test_model not found"
 
     def test_track_request_latency(self, metrics_collector: MetricsCollector) -> None:
         """Test request latency tracking."""
@@ -125,20 +118,15 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_tokens_input_total":
                 for sample in metric.samples:
-                    if (
-                        sample.labels.get("model") == "token_test"
-                        and sample.value >= 100
-                    ):
+                    if sample.labels.get("model") == "token_test" and sample.value >= 100:
                         input_recorded = True
             elif metric.name == "tinyllm_tokens_output_total":
                 for sample in metric.samples:
-                    if (
-                        sample.labels.get("model") == "token_test"
-                        and sample.value >= 50
-                    ):
+                    if sample.labels.get("model") == "token_test" and sample.value >= 50:
                         output_recorded = True
 
-        assert input_recorded and output_recorded
+        assert input_recorded, "Input tokens not recorded"
+        assert output_recorded, "Output tokens not recorded"
 
     def test_increment_error_count(self, metrics_collector: MetricsCollector) -> None:
         """Test error counter."""
@@ -154,11 +142,12 @@ class TestMetricsCollector:
                     if (
                         sample.labels.get("error_type") == "timeout"
                         and sample.labels.get("model") == "error_test"
+                        and sample.value >= 1
                     ):
                         error_recorded = True
                         break
 
-        assert error_recorded
+        assert error_recorded, "Error count not recorded"
 
     def test_circuit_breaker_state(self, metrics_collector: MetricsCollector) -> None:
         """Test circuit breaker state tracking."""
@@ -185,23 +174,17 @@ class TestMetricsCollector:
         self, metrics_collector: MetricsCollector
     ) -> None:
         """Test circuit breaker failure counter."""
-        before = 0
-        for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_circuit_breaker_failures_total":
-                for sample in metric.samples:
-                    if sample.labels.get("model") == "failure_test":
-                        before = sample.value
-
         metrics_collector.increment_circuit_breaker_failures(model="failure_test")
 
-        after = 0
+        found = False
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_circuit_breaker_failures_total":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "failure_test":
-                        after = sample.value
+                    if sample.labels.get("model") == "failure_test" and sample.value >= 1:
+                        found = True
+                        break
 
-        assert after > before
+        assert found, "Circuit breaker failures not recorded"
 
     def test_track_model_load(self, metrics_collector: MetricsCollector) -> None:
         """Test model load duration tracking."""
@@ -233,11 +216,11 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_node_executions_total":
                 for sample in metric.samples:
-                    if sample.labels.get("node") == "test_node":
+                    if sample.labels.get("node") == "test_node" and sample.value >= 1:
                         exec_recorded = True
                         break
 
-        assert exec_recorded
+        assert exec_recorded, "Node execution not recorded"
 
     def test_node_error_count(self, metrics_collector: MetricsCollector) -> None:
         """Test node error counting."""
@@ -252,11 +235,12 @@ class TestMetricsCollector:
                     if (
                         sample.labels.get("node") == "error_node"
                         and sample.labels.get("error_type") == "validation"
+                        and sample.value >= 1
                     ):
                         error_recorded = True
                         break
 
-        assert error_recorded
+        assert error_recorded, "Node error count not recorded"
 
     def test_graph_execution_tracking(
         self, metrics_collector: MetricsCollector
@@ -269,11 +253,11 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_graph_executions_total":
                 for sample in metric.samples:
-                    if sample.labels.get("graph") == "test_graph":
+                    if sample.labels.get("graph") == "test_graph" and sample.value >= 1:
                         exec_recorded = True
                         break
 
-        assert exec_recorded
+        assert exec_recorded, "Graph execution not recorded"
 
     def test_cache_metrics(self, metrics_collector: MetricsCollector) -> None:
         """Test cache hit/miss tracking."""
@@ -286,14 +270,15 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_cache_hits_total":
                 for sample in metric.samples:
-                    if sample.labels.get("cache_type") == "memory":
+                    if sample.labels.get("cache_type") == "memory" and sample.value >= 1:
                         hits_recorded = True
             elif metric.name == "tinyllm_cache_misses_total":
                 for sample in metric.samples:
-                    if sample.labels.get("cache_type") == "memory":
+                    if sample.labels.get("cache_type") == "memory" and sample.value >= 1:
                         misses_recorded = True
 
-        assert hits_recorded and misses_recorded
+        assert hits_recorded, "Cache hits not recorded"
+        assert misses_recorded, "Cache misses not recorded"
 
     def test_rate_limit_wait(self, metrics_collector: MetricsCollector) -> None:
         """Test rate limit wait time recording."""
@@ -321,11 +306,11 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_memory_operations_total":
                 for sample in metric.samples:
-                    if sample.labels.get("operation_type") in ["add", "get"]:
+                    if sample.labels.get("operation_type") in ["add", "get"] and sample.value >= 1:
                         ops_recorded = True
                         break
 
-        assert ops_recorded
+        assert ops_recorded, "Memory operations not recorded"
 
     def test_get_metrics_summary(self, metrics_collector: MetricsCollector) -> None:
         """Test metrics summary retrieval."""
@@ -411,14 +396,15 @@ class TestMetricsIntegration:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_graph_executions_total":
                 for sample in metric.samples:
-                    if sample.labels.get("graph") == "outer":
+                    if sample.labels.get("graph") == "outer" and sample.value >= 1:
                         graph_recorded = True
             elif metric.name == "tinyllm_node_executions_total":
                 for sample in metric.samples:
-                    if sample.labels.get("node") == "inner":
+                    if sample.labels.get("node") == "inner" and sample.value >= 1:
                         node_recorded = True
 
-        assert graph_recorded and node_recorded
+        assert graph_recorded, "Graph execution not recorded"
+        assert node_recorded, "Node execution not recorded"
 
     def test_metrics_labels(self, metrics_collector: MetricsCollector) -> None:
         """Test that metric labels are properly applied."""
@@ -435,8 +421,9 @@ class TestMetricsIntegration:
                         labels.get("model") == "qwen2.5:0.5b"
                         and labels.get("graph") == "multi_domain"
                         and labels.get("request_type") == "generate"
+                        and sample.value >= 1
                     ):
                         found_metric = True
                         break
 
-        assert found_metric
+        assert found_metric, "Metric with correct labels not found"

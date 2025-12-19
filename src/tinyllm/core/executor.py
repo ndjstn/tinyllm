@@ -6,7 +6,8 @@ a graph, managing state and producing traces.
 
 import asyncio
 import time
-from typing import Optional
+from enum import Enum
+from typing import List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -26,6 +27,15 @@ from tinyllm.core.node import BaseNode, NodeResult
 from tinyllm.core.trace import ExecutionTrace, TraceRecorder
 
 
+class DegradationMode(str, Enum):
+    """Degradation modes for handling failures."""
+
+    FAIL_FAST = "fail_fast"  # Stop immediately on any failure
+    SKIP_FAILED = "skip_failed"  # Skip failed nodes and continue with available paths
+    FALLBACK_SIMPLE = "fallback_simple"  # Use simplified responses for failed nodes
+    BEST_EFFORT = "best_effort"  # Continue with whatever partial results available
+
+
 class ExecutorConfig(BaseModel):
     """Configuration for the executor."""
 
@@ -37,6 +47,16 @@ class ExecutorConfig(BaseModel):
     )
     enable_tracing: bool = Field(default=True, description="Whether to record execution trace")
     fail_fast: bool = Field(default=False, description="Stop on first node failure")
+    degradation_mode: str = Field(
+        default="fail_fast",
+        description="How to handle node failures (fail_fast, skip_failed, fallback_simple, best_effort)"
+    )
+    max_node_failures: int = Field(
+        default=3, ge=1, le=100, description="Maximum node failures before stopping (for degradation modes)"
+    )
+    enable_partial_results: bool = Field(
+        default=True, description="Return partial results even when execution doesn't complete fully"
+    )
 
 
 class ExecutionError(Exception):
@@ -52,6 +72,12 @@ class Executor:
 
     The Executor manages the flow of messages through graph nodes,
     handling routing, timeouts, retries, and producing execution traces.
+
+    Supports graceful degradation modes:
+    - fail_fast: Stop immediately on any failure
+    - skip_failed: Skip failed nodes and continue with alternative paths
+    - fallback_simple: Provide simplified responses for failed nodes
+    - best_effort: Continue with partial results even on failures
     """
 
     def __init__(
@@ -70,6 +96,8 @@ class Executor:
         self.graph = graph
         self.config = config or ExecutorConfig()
         self.system_config = system_config
+        self._failed_nodes: List[str] = []
+        self._partial_results: List[NodeResult] = []
 
     async def execute(self, task: TaskPayload) -> TaskResponse:
         """Execute a task through the graph.
@@ -210,12 +238,49 @@ class Executor:
             recorder.complete_node(current_node.id, result)
             current_node.update_stats(result.success, result.latency_ms)
 
-            # Handle failure
+            # Handle failure with degradation
             if not result.success:
-                if self.config.fail_fast:
+                self._failed_nodes.append(current_node.id)
+                self._partial_results.append(result)
+
+                # Check if we've exceeded failure threshold
+                if len(self._failed_nodes) >= self.config.max_node_failures:
+                    if self.config.enable_partial_results:
+                        return self._build_partial_result(result, context)
                     return result
-                # For non-fail-fast, we still return on terminal failure
+
+                # Handle based on degradation mode
+                degradation_mode = self.config.degradation_mode
+
+                if degradation_mode == "fail_fast" or self.config.fail_fast:
+                    return result
+                elif degradation_mode == "skip_failed":
+                    # Try to find alternative path
+                    alternative_nodes = self._find_alternative_paths(current_node.id, message)
+                    if alternative_nodes:
+                        result.next_nodes = alternative_nodes
+                    elif self.config.enable_partial_results:
+                        return self._build_partial_result(result, context)
+                    else:
+                        return result
+                elif degradation_mode == "fallback_simple":
+                    # Create a simple fallback response
+                    result = self._create_fallback_result(current_node, message, result)
+                elif degradation_mode == "best_effort":
+                    # Continue with whatever we have
+                    if not result.next_nodes:
+                        alternative_nodes = self._find_alternative_paths(current_node.id, message)
+                        if alternative_nodes:
+                            result.next_nodes = alternative_nodes
+                        elif self.config.enable_partial_results:
+                            return self._build_partial_result(result, context)
+                        else:
+                            return result
+
+                # For non-fail-fast, check if we can continue
                 if not result.next_nodes:
+                    if self.config.enable_partial_results:
+                        return self._build_partial_result(result, context)
                     return result
 
             # Check for exit
@@ -315,6 +380,133 @@ class Executor:
             msg = result.output_messages[-1]
             return msg.payload.content
         return None
+
+    def _find_alternative_paths(self, failed_node_id: str, message: Message) -> list[str]:
+        """Find alternative execution paths when a node fails.
+
+        Args:
+            failed_node_id: ID of the failed node.
+            message: Current message.
+
+        Returns:
+            List of alternative node IDs to try.
+        """
+        # Get all outgoing edges from the failed node
+        edges = self.graph.get_outgoing_edges(failed_node_id)
+
+        alternative_nodes = []
+        for edge in edges:
+            next_node_id = edge.to_node
+            # Skip already failed nodes
+            if next_node_id not in self._failed_nodes:
+                # Check if the edge has a condition
+                if edge.condition:
+                    if self.graph._evaluate_condition(edge.condition, message):
+                        alternative_nodes.append(next_node_id)
+                else:
+                    alternative_nodes.append(next_node_id)
+
+        return alternative_nodes
+
+    def _create_fallback_result(
+        self, node: BaseNode, message: Message, failed_result: NodeResult
+    ) -> NodeResult:
+        """Create a simplified fallback result when a node fails.
+
+        Args:
+            node: The failed node.
+            message: Input message.
+            failed_result: The original failed result.
+
+        Returns:
+            Fallback NodeResult with simplified response.
+        """
+        # Create a simple fallback message
+        fallback_content = (
+            f"The system encountered an issue processing your request at {node.id}. "
+            f"Providing a simplified response based on available information."
+        )
+
+        fallback_message = Message(
+            trace_id=message.trace_id,
+            source_node=node.id,
+            target_node=message.target_node,
+            payload=MessagePayload(
+                content=fallback_content,
+                task=message.payload.task,
+                structured={"fallback": True, "original_error": failed_result.error},
+            ),
+        )
+
+        # Try to find next nodes
+        next_nodes = self._find_alternative_paths(node.id, message)
+
+        return NodeResult(
+            success=True,  # Mark as success to allow continuation
+            output_messages=[fallback_message],
+            next_nodes=next_nodes,
+            metadata={
+                "degraded": True,
+                "original_error": failed_result.error,
+                "fallback_mode": "simple",
+            },
+            latency_ms=failed_result.latency_ms,
+        )
+
+    def _build_partial_result(self, last_result: NodeResult, context: ExecutionContext) -> NodeResult:
+        """Build a partial result from successful nodes when execution can't complete.
+
+        Args:
+            last_result: The last result (possibly failed).
+            context: Execution context.
+
+        Returns:
+            NodeResult with partial results aggregated.
+        """
+        # Collect all successful partial results
+        successful_results = [r for r in self._partial_results if r.success]
+
+        # If we have no successful results, return the last result
+        if not successful_results:
+            return last_result
+
+        # Aggregate content from successful results
+        aggregated_content = []
+        for result in successful_results:
+            if result.output_messages:
+                for msg in result.output_messages:
+                    if msg.payload.content:
+                        aggregated_content.append(msg.payload.content)
+
+        # Create a partial response message
+        partial_message = Message(
+            trace_id=context.trace_id,
+            source_node="executor",
+            target_node="exit",
+            payload=MessagePayload(
+                content=" ".join(aggregated_content) if aggregated_content else "Partial results available.",
+                task="partial_result",
+                structured={
+                    "partial": True,
+                    "successful_nodes": len(successful_results),
+                    "failed_nodes": len(self._failed_nodes),
+                    "failed_node_ids": self._failed_nodes,
+                },
+            ),
+        )
+
+        return NodeResult(
+            success=True,  # Partial success
+            output_messages=[partial_message],
+            next_nodes=[],
+            metadata={
+                "partial_result": True,
+                "successful_nodes": len(successful_results),
+                "failed_nodes": len(self._failed_nodes),
+                "degradation_mode": self.config.degradation_mode,
+            },
+            latency_ms=last_result.latency_ms,
+        )
 
     def get_trace(self) -> Optional[ExecutionTrace]:
         """Get the execution trace (if tracing enabled).

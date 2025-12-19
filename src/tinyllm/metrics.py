@@ -2,13 +2,16 @@
 
 Provides comprehensive metrics tracking for monitoring TinyLLM performance,
 resource usage, and operational health. Exports metrics via HTTP for Prometheus scraping.
+
+Includes cardinality controls to prevent metric explosion from unbounded label combinations.
 """
 
 import time
+from collections import defaultdict
 from contextlib import contextmanager
 from enum import Enum
 from threading import Lock
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from prometheus_client import (
     REGISTRY,
@@ -22,6 +25,95 @@ from prometheus_client import (
 from tinyllm.logging import get_logger
 
 logger = get_logger(__name__, component="metrics")
+
+
+class CardinalityTracker:
+    """Tracks and limits metric label cardinality to prevent metric explosion.
+
+    High cardinality metrics can cause memory issues and degrade monitoring
+    performance. This tracker enforces limits on unique label combinations.
+    """
+
+    def __init__(self, max_cardinality: int = 1000):
+        """Initialize cardinality tracker.
+
+        Args:
+            max_cardinality: Maximum number of unique label combinations allowed.
+        """
+        self.max_cardinality = max_cardinality
+        self.label_sets: Dict[str, Set[Tuple[str, ...]]] = defaultdict(set)
+        self.dropped_counts: Dict[str, int] = defaultdict(int)
+        self._lock = Lock()
+
+    def check_and_add(self, metric_name: str, labels: Tuple[str, ...]) -> bool:
+        """Check if label combination is allowed and add it if under limit.
+
+        Args:
+            metric_name: Name of the metric.
+            labels: Tuple of label values.
+
+        Returns:
+            True if allowed, False if cardinality limit exceeded.
+        """
+        with self._lock:
+            label_set = self.label_sets[metric_name]
+
+            # If already seen, always allow
+            if labels in label_set:
+                return True
+
+            # Check cardinality limit
+            if len(label_set) >= self.max_cardinality:
+                self.dropped_counts[metric_name] += 1
+                if self.dropped_counts[metric_name] % 100 == 1:  # Log every 100 drops
+                    logger.warning(
+                        "metric_cardinality_limit_exceeded",
+                        metric_name=metric_name,
+                        cardinality=len(label_set),
+                        max_cardinality=self.max_cardinality,
+                        dropped_count=self.dropped_counts[metric_name],
+                    )
+                return False
+
+            # Add new label combination
+            label_set.add(labels)
+            return True
+
+    def get_cardinality(self, metric_name: str) -> int:
+        """Get current cardinality for a metric.
+
+        Args:
+            metric_name: Name of the metric.
+
+        Returns:
+            Number of unique label combinations.
+        """
+        return len(self.label_sets.get(metric_name, set()))
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cardinality statistics.
+
+        Returns:
+            Dictionary with cardinality stats per metric.
+        """
+        with self._lock:
+            return {
+                "metrics": {
+                    name: {
+                        "cardinality": len(labels),
+                        "dropped": self.dropped_counts.get(name, 0),
+                    }
+                    for name, labels in self.label_sets.items()
+                },
+                "total_label_combinations": sum(len(labels) for labels in self.label_sets.values()),
+                "max_cardinality": self.max_cardinality,
+            }
+
+    def reset(self) -> None:
+        """Reset all cardinality tracking (for testing)."""
+        with self._lock:
+            self.label_sets.clear()
+            self.dropped_counts.clear()
 
 
 class MetricLabels(str, Enum):
@@ -62,12 +154,26 @@ class MetricsCollector:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self) -> None:
-        """Initialize metrics collector."""
+    def __init__(self, max_cardinality: int = 1000) -> None:
+        """Initialize metrics collector.
+
+        Args:
+            max_cardinality: Maximum unique label combinations per metric.
+        """
         if self._initialized:
             return
 
-        logger.info("initializing_metrics_collector")
+        logger.info("initializing_metrics_collector", max_cardinality=max_cardinality)
+
+        # Initialize cardinality tracker
+        self.cardinality_tracker = CardinalityTracker(max_cardinality=max_cardinality)
+
+        # Error rate alert thresholds
+        self._error_rate_threshold = 0.05  # 5% error rate threshold
+        self._error_count_threshold = 10  # 10 errors threshold (absolute)
+        self._alert_window_seconds = 300  # 5 minute window
+        self._last_error_alert = 0.0  # Last time we sent an error alert
+        self._error_count_window: List[tuple[float, str]] = []  # Sliding window of errors (timestamp, error_type)
 
         # System info
         self.system_info = Info("tinyllm_system", "TinyLLM system information")
@@ -249,6 +355,20 @@ class MetricsCollector:
         self._initialized = True
         logger.info("metrics_collector_initialized")
 
+    # Cardinality control helper
+
+    def _check_cardinality(self, metric_name: str, *label_values: str) -> bool:
+        """Check if metric labels are within cardinality limits.
+
+        Args:
+            metric_name: Name of the metric.
+            *label_values: Label values to check.
+
+        Returns:
+            True if allowed, False if cardinality limit exceeded.
+        """
+        return self.cardinality_tracker.check_and_add(metric_name, label_values)
+
     # Request tracking methods
 
     def increment_request_count(
@@ -264,6 +384,11 @@ class MetricsCollector:
             graph: Graph name.
             request_type: Type of request (generate, stream, etc).
         """
+        if not self._check_cardinality("requests_total", model, graph, request_type):
+            # Use fallback labels when cardinality limit exceeded
+            model = "other"
+            graph = "other"
+
         self.request_total.labels(
             model=model, graph=graph, request_type=request_type
         ).inc()
@@ -324,7 +449,7 @@ class MetricsCollector:
         model: str = "unknown",
         graph: str = "unknown",
     ) -> None:
-        """Increment the error counter.
+        """Increment the error counter and check alert thresholds.
 
         Args:
             error_type: Type of error (e.g., timeout, connection, validation).
@@ -334,6 +459,136 @@ class MetricsCollector:
         self.errors_total.labels(
             error_type=error_type, model=model, graph=graph
         ).inc()
+
+        # Track error in sliding window for rate alerting
+        current_time = time.time()
+        self._error_count_window.append((current_time, error_type))
+
+        # Check if we should alert
+        self._check_error_rate_threshold()
+
+    def _check_error_rate_threshold(self) -> None:
+        """Check if error rate exceeds threshold and trigger alert if needed."""
+        current_time = time.time()
+
+        # Remove errors outside the window
+        cutoff_time = current_time - self._alert_window_seconds
+        self._error_count_window = [
+            (ts, et) for ts, et in self._error_count_window if ts > cutoff_time
+        ]
+
+        # Count errors in current window
+        error_count = len(self._error_count_window)
+
+        # Check if we should alert (rate limiting: max 1 alert per minute)
+        if current_time - self._last_error_alert < 60:
+            return
+
+        # Alert on absolute count threshold
+        if error_count >= self._error_count_threshold:
+            self._trigger_error_alert(
+                f"Error count threshold exceeded: {error_count} errors in {self._alert_window_seconds}s window",
+                error_count=error_count,
+                threshold=self._error_count_threshold,
+                alert_type="count"
+            )
+            self._last_error_alert = current_time
+
+    def _trigger_error_alert(
+        self,
+        message: str,
+        error_count: int,
+        threshold: float,
+        alert_type: str
+    ) -> None:
+        """Trigger an error rate alert.
+
+        Args:
+            message: Alert message.
+            error_count: Current error count.
+            threshold: Threshold that was exceeded.
+            alert_type: Type of threshold (rate or count).
+        """
+        logger.error(
+            "error_rate_alert",
+            message=message,
+            error_count=error_count,
+            threshold=threshold,
+            alert_type=alert_type,
+            window_seconds=self._alert_window_seconds,
+        )
+
+        # Count error types in window
+        error_types = {}
+        for _, error_type in self._error_count_window:
+            error_types[error_type] = error_types.get(error_type, 0) + 1
+
+        logger.error(
+            "error_breakdown",
+            error_types=error_types,
+        )
+
+    def set_error_rate_threshold(self, rate: float) -> None:
+        """Set the error rate threshold for alerting.
+
+        Args:
+            rate: Error rate threshold (0.0 to 1.0, e.g., 0.05 for 5%).
+        """
+        if not 0.0 <= rate <= 1.0:
+            raise ValueError(f"Error rate threshold must be between 0.0 and 1.0, got {rate}")
+        self._error_rate_threshold = rate
+        logger.info("error_rate_threshold_updated", threshold=rate)
+
+    def set_error_count_threshold(self, count: int) -> None:
+        """Set the absolute error count threshold for alerting.
+
+        Args:
+            count: Number of errors in window to trigger alert.
+        """
+        if count < 1:
+            raise ValueError(f"Error count threshold must be >= 1, got {count}")
+        self._error_count_threshold = count
+        logger.info("error_count_threshold_updated", threshold=count)
+
+    def set_alert_window(self, seconds: float) -> None:
+        """Set the time window for error rate calculation.
+
+        Args:
+            seconds: Window size in seconds.
+        """
+        if seconds < 1.0:
+            raise ValueError(f"Alert window must be >= 1.0 seconds, got {seconds}")
+        self._alert_window_seconds = seconds
+        logger.info("alert_window_updated", window_seconds=seconds)
+
+    def get_current_error_rate(self) -> Dict[str, Any]:
+        """Get current error rate statistics.
+
+        Returns:
+            Dictionary with error rate metrics.
+        """
+        current_time = time.time()
+        cutoff_time = current_time - self._alert_window_seconds
+
+        # Count recent errors
+        recent_errors = [
+            (ts, et) for ts, et in self._error_count_window if ts > cutoff_time
+        ]
+        error_count = len(recent_errors)
+
+        # Count by type
+        error_types = {}
+        for _, error_type in recent_errors:
+            error_types[error_type] = error_types.get(error_type, 0) + 1
+
+        return {
+            "window_seconds": self._alert_window_seconds,
+            "error_count": error_count,
+            "error_rate_threshold": self._error_rate_threshold,
+            "error_count_threshold": self._error_count_threshold,
+            "error_types": error_types,
+            "threshold_exceeded": error_count >= self._error_count_threshold,
+        }
 
     # Circuit breaker methods
 
@@ -540,6 +795,14 @@ class MetricsCollector:
 
     # Utility methods
 
+    def get_cardinality_stats(self) -> Dict[str, Any]:
+        """Get cardinality statistics for all metrics.
+
+        Returns:
+            Dictionary containing cardinality information.
+        """
+        return self.cardinality_tracker.get_stats()
+
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Get a summary of current metrics.
 
@@ -551,6 +814,7 @@ class MetricsCollector:
             "collector": "prometheus",
             "registry": "default",
             "metrics_count": len(list(REGISTRY.collect())),
+            "cardinality_stats": self.cardinality_tracker.get_stats(),
         }
 
     def reset_metrics(self) -> None:
