@@ -2,15 +2,25 @@
 
 Provides both in-memory and Redis-backed caching for LLM responses with
 TTL support, LRU eviction, and comprehensive metrics tracking.
+
+Advanced features:
+- Semantic similarity caching with embeddings
+- Cache warming and prefetching
+- Distributed Redis cluster support
+- Multi-tier caching (L1/L2/L3)
+- Compression and cost modeling
 """
 
 import asyncio
+import gzip
 import hashlib
 import json
 import time
+import zlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from enum import Enum
+from typing import Any, Callable, Optional, Protocol
 
 from pydantic import BaseModel
 
@@ -18,6 +28,35 @@ from tinyllm.logging import get_logger
 from tinyllm.models.client import GenerateResponse, OllamaClient
 
 logger = get_logger(__name__, component="cache")
+
+
+# Task 94: Cache invalidation patterns
+class InvalidationStrategy(Enum):
+    """Cache invalidation strategies."""
+
+    TTL = "ttl"  # Time-based expiration
+    LRU = "lru"  # Least recently used
+    LFU = "lfu"  # Least frequently used
+    PATTERN = "pattern"  # Pattern-based invalidation
+    TAG = "tag"  # Tag-based invalidation
+
+
+# Task 97: Compression algorithms
+class CompressionAlgorithm(Enum):
+    """Cache compression algorithms."""
+
+    NONE = "none"
+    GZIP = "gzip"
+    ZLIB = "zlib"
+
+
+# Task 98: Cache tier levels
+class CacheTier(Enum):
+    """Cache tier levels for multi-tier caching."""
+
+    L1 = "l1"  # Fast in-memory (small, hot data)
+    L2 = "l2"  # Medium-speed (larger, warm data)
+    L3 = "l3"  # Slower persistent (largest, cold data)
 
 
 @dataclass

@@ -65,8 +65,6 @@ class MessageFactory(Factory):
     source_node = Faker("word")
     payload = SubFactory(MessagePayloadFactory)
     parent_id = None
-    timestamp = LazyFunction(lambda: datetime.utcnow().isoformat())
-    metadata = LazyFunction(dict)
 
     @classmethod
     def with_parent(cls, parent: Message, **kwargs):
@@ -239,6 +237,7 @@ class GraphDefinitionFactory(Factory):
     ])
     edges = LazyFunction(lambda: [])
     entry_points = LazyAttribute(lambda obj: [obj.nodes[0].id])
+    exit_points = LazyAttribute(lambda obj: [n.id for n in obj.nodes if n.type == NodeType.EXIT])
 
     @classmethod
     def simple_graph(cls, **kwargs):

@@ -436,7 +436,7 @@ class TestPartitioningChaos:
             type=NodeType.FANOUT,
             config={
                 "target_nodes": [f"target_{i}" for i in range(5)],
-                "aggregation_strategy": "majority",
+                "aggregation_strategy": "majority_vote",
                 "parallel": True,
             },
         )
@@ -541,6 +541,7 @@ class TestRandomizedChaos:
 
             if action == "delay":
                 await asyncio.sleep(random.uniform(0.01, 0.1))
+                content = f"Normal content {i}"
             elif action == "corrupt_content":
                 content = "\x00" * random.randint(1, 100)
             elif action == "empty_content":
@@ -620,7 +621,7 @@ class TestRecoveryChaos:
             type=NodeType.FANOUT,
             config={
                 "target_nodes": [f"target_{i}" for i in range(10)],
-                "aggregation_strategy": "best_effort",
+                "aggregation_strategy": "first_success",
                 "parallel": True,
             },
         )

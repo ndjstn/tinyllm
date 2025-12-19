@@ -15,8 +15,8 @@ from tinyllm.error_notifications import (
     WebhookNotificationChannel,
 )
 
-# Import the enum separately to avoid naming conflict with ABC
-from tinyllm.error_notifications import NotificationChannel as NotificationChannelEnum
+# Import the enum
+from tinyllm.error_notifications import NotificationChannelType
 from tinyllm.errors import ExecutionError, TimeoutError
 
 
@@ -26,19 +26,19 @@ class TestNotificationConfig:
     def test_config_creation(self):
         """Test creating notification config."""
         config = NotificationConfig(
-            channel=NotificationChannelEnum.WEBHOOK,
+            channel=NotificationChannelType.WEBHOOK,
             min_impact_level=ImpactLevel.HIGH,
             min_impact_score=75.0,
         )
 
-        assert config.channel == NotificationChannelEnum.WEBHOOK
+        assert config.channel == NotificationChannelType.WEBHOOK
         assert config.min_impact_level == ImpactLevel.HIGH
         assert config.min_impact_score == 75.0
         assert config.enabled is True
 
     def test_config_defaults(self):
         """Test default configuration values."""
-        config = NotificationConfig(channel=NotificationChannelEnum.LOG)
+        config = NotificationConfig(channel=NotificationChannelType.LOG)
 
         assert config.min_impact_level == ImpactLevel.MEDIUM
         assert config.min_impact_score == 50.0
@@ -123,7 +123,7 @@ class TestLogNotificationChannel:
     @pytest.mark.asyncio
     async def test_send_notification(self):
         """Test sending log notification."""
-        config = NotificationConfig(channel=NotificationChannelEnum.LOG)
+        config = NotificationConfig(channel=NotificationChannelType.LOG)
         channel = LogNotificationChannel(config)
 
         scorer = ImpactScorer()
@@ -146,7 +146,7 @@ class TestLogNotificationChannel:
     def test_should_notify_threshold(self):
         """Test notification threshold checking."""
         config = NotificationConfig(
-            channel=NotificationChannelEnum.LOG,
+            channel=NotificationChannelType.LOG,
             min_impact_level=ImpactLevel.HIGH,
             min_impact_score=70.0,
         )
@@ -181,7 +181,7 @@ class TestLogNotificationChannel:
     def test_rate_limiting(self):
         """Test notification rate limiting."""
         config = NotificationConfig(
-            channel=NotificationChannelEnum.LOG,
+            channel=NotificationChannelType.LOG,
             rate_limit_minutes=5,
         )
         channel = LogNotificationChannel(config)
@@ -251,13 +251,13 @@ class TestNotificationManager:
         # Add multiple log channels with different thresholds
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannelEnum.LOG,
+                channel=NotificationChannelType.LOG,
                 min_impact_level=ImpactLevel.HIGH,
             )
         )
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannelEnum.LOG,
+                channel=NotificationChannelType.LOG,
                 min_impact_level=ImpactLevel.CRITICAL,
             )
         )
@@ -270,7 +270,7 @@ class TestWebhookNotificationChannel:
 
     def test_webhook_channel_creation(self):
         """Test creating webhook channel."""
-        config = NotificationConfig(channel=NotificationChannelEnum.WEBHOOK)
+        config = NotificationConfig(channel=NotificationChannelType.WEBHOOK)
         webhook_config = WebhookConfig(url="https://example.com/webhook")
 
         channel = WebhookNotificationChannel(config, webhook_config)
@@ -279,7 +279,7 @@ class TestWebhookNotificationChannel:
     @pytest.mark.asyncio
     async def test_webhook_channel_cleanup(self):
         """Test webhook channel cleanup."""
-        config = NotificationConfig(channel=NotificationChannelEnum.WEBHOOK)
+        config = NotificationConfig(channel=NotificationChannelType.WEBHOOK)
         webhook_config = WebhookConfig(url="https://example.com/webhook")
 
         channel = WebhookNotificationChannel(config, webhook_config)
@@ -311,7 +311,7 @@ class TestNotificationIntegration:
         manager = NotificationManager()
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannelEnum.LOG,
+                channel=NotificationChannelType.LOG,
                 min_impact_level=ImpactLevel.MEDIUM,
             )
         )

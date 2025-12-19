@@ -32,12 +32,12 @@ def simple_graph_def():
     """Create a simple graph definition for testing."""
     return GraphDefinition(
         id="test_graph",
-        version="1.0",
+        version="1.0.0",
         name="Test Graph",
         nodes=[
-            NodeDefinition(id="entry", type=NodeType.PASSTHROUGH, name="Entry"),
-            NodeDefinition(id="process", type=NodeType.PASSTHROUGH, name="Process"),
-            NodeDefinition(id="exit", type=NodeType.PASSTHROUGH, name="Exit"),
+            NodeDefinition(id="entry", type=NodeType.TRANSFORM, name="Entry"),
+            NodeDefinition(id="process", type=NodeType.TRANSFORM, name="Process"),
+            NodeDefinition(id="exit", type=NodeType.TRANSFORM, name="Exit"),
         ],
         edges=[
             {"from_node": "entry", "to_node": "process"},
@@ -493,20 +493,21 @@ def test_transaction_get_status():
 
 def test_transactional_executor_creation():
     """Test creating a transactional executor."""
-    from tinyllm.core.node import PassthroughNode
+    from tinyllm.nodes.transform import TransformNode
 
     graph_def = GraphDefinition(
         id="test_graph",
-        version="1.0",
+        version="1.0.0",
+        name="Test Graph",
         nodes=[
-            NodeDefinition(id="entry", type=NodeType.PASSTHROUGH),
+            NodeDefinition(id="entry", type=NodeType.TRANSFORM),
         ],
         entry_points=["entry"],
         exit_points=["entry"],
     )
 
     graph = Graph(graph_def)
-    graph.add_node(PassthroughNode(id="entry"))
+    graph.add_node(TransformNode(id="entry"))
 
     executor = TransactionalExecutor(graph, enable_transactions=True)
 
@@ -516,20 +517,21 @@ def test_transactional_executor_creation():
 
 def test_transactional_executor_get_status():
     """Test getting transaction status from executor."""
-    from tinyllm.core.node import PassthroughNode
+    from tinyllm.nodes.transform import TransformNode
 
     graph_def = GraphDefinition(
         id="test_graph",
-        version="1.0",
+        version="1.0.0",
+        name="Test Graph",
         nodes=[
-            NodeDefinition(id="entry", type=NodeType.PASSTHROUGH),
+            NodeDefinition(id="entry", type=NodeType.TRANSFORM),
         ],
         entry_points=["entry"],
         exit_points=["entry"],
     )
 
     graph = Graph(graph_def)
-    graph.add_node(PassthroughNode(id="entry"))
+    graph.add_node(TransformNode(id="entry"))
 
     executor = TransactionalExecutor(graph)
 
@@ -546,12 +548,12 @@ def test_transactional_executor_get_status():
 @pytest.mark.asyncio
 async def test_degradation_modes_integration(simple_graph_def):
     """Test different degradation modes in executor."""
-    from tinyllm.core.node import PassthroughNode
+    from tinyllm.nodes.transform import TransformNode
 
     # Build graph
     graph = Graph(simple_graph_def)
     for node_def in simple_graph_def.nodes:
-        graph.add_node(PassthroughNode(id=node_def.id, name=node_def.name))
+        graph.add_node(TransformNode(id=node_def.id, name=node_def.name))
 
     # Test fail_fast mode
     config = ExecutorConfig(degradation_mode="fail_fast", fail_fast=True)
@@ -567,12 +569,12 @@ async def test_degradation_modes_integration(simple_graph_def):
 @pytest.mark.asyncio
 async def test_checkpoint_and_recovery_integration(simple_graph_def):
     """Test checkpoint creation and recovery integration."""
-    from tinyllm.core.node import PassthroughNode
+    from tinyllm.nodes.transform import TransformNode
 
     # Build graph
     graph = Graph(simple_graph_def)
     for node_def in simple_graph_def.nodes:
-        graph.add_node(PassthroughNode(id=node_def.id, name=node_def.name))
+        graph.add_node(TransformNode(id=node_def.id, name=node_def.name))
 
     # Create executor with checkpointing
     config = ExecutorConfig(

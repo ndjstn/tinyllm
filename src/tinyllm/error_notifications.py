@@ -621,7 +621,7 @@ class NotificationManager:
             channel_config: Optional base channel configuration.
         """
         if channel_config is None:
-            channel_config = NotificationConfig(channel=NotificationChannel.EMAIL)
+            channel_config = NotificationConfig(channel=NotificationChannelType.EMAIL)
 
         channel = EmailNotificationChannel(channel_config, email_config)
         self.channels.append(channel)
@@ -642,7 +642,7 @@ class NotificationManager:
             channel_config: Optional base channel configuration.
         """
         if channel_config is None:
-            channel_config = NotificationConfig(channel=NotificationChannel.LOG)
+            channel_config = NotificationConfig(channel=NotificationChannelType.LOG)
 
         channel = LogNotificationChannel(channel_config)
         self.channels.append(channel)
