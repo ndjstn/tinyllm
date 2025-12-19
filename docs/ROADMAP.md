@@ -1,5 +1,7 @@
 # TinyLLM Roadmap
 
+> **Note**: This project was developed in December 2025. All completed phases were implemented in a single development sprint to prove the concept. Future phases represent genuine planned work.
+
 This document outlines the development phases for TinyLLM. Each phase builds on the previous and has clear completion criteria.
 
 ## Overview

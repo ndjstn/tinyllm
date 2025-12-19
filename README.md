@@ -366,41 +366,31 @@ tinyllm/
 
 ---
 
-## Roadmap
+## Development Timeline
 
-```mermaid
-gantt
-    title TinyLLM Development Roadmap
-    dateFormat YYYY-MM-DD
+> **Transparency**: This project was built in December 2025. All phases were implemented and tested in a single development sprint.
 
-    section Foundation
-    Config & Models       :done, p0, 2024-01-01, 7d
-    Core Engine          :done, p1, after p0, 7d
+### Completed (December 2025)
 
-    section Nodes & Tools
-    Node Implementations :done, p2, after p1, 7d
-    Multi-Dim Routing    :done, p3, after p2, 3d
+| Phase | Component | Status | Tests |
+|-------|-----------|--------|-------|
+| 0 | Foundation (Config, Models, Messages) | ✅ Complete | 45 |
+| 1 | Core Engine (Graph, Executor, Nodes) | ✅ Complete | 52 |
+| 2 | Tools (Calculator, Code Executor, Sandbox) | ✅ Complete | 38 |
+| 3 | Routing & Specialists (Multi-dimensional) | ✅ Complete | 41 |
+| 4 | Grading System (LLM-as-judge) | ✅ Complete | 32 |
+| 5 | Expansion System (Self-improvement) | ✅ Complete | 34 |
+| 6 | Memory System (STM/LTM) | ✅ Complete | 25 |
 
-    section Quality
-    Grading System       :done, p4, after p3, 7d
-    LLM-as-Judge        :done, p5, after p4, 5d
+**Total: 267 tests passing**
 
-    section Self-Improvement
-    Expansion System     :done, p6, after p5, 7d
-    Memory System        :done, p7, after p6, 7d
-```
+### Roadmap (Planned)
 
-### Current Status
-
-- [x] **Phase 0**: Foundation (Config, Models, Messages)
-- [x] **Phase 1**: Core Engine (Graph, Executor, Nodes)
-- [x] **Phase 2**: Tools (Calculator, Code Executor, Sandbox)
-- [x] **Phase 3**: Routing & Specialists (Router, Model, Gate nodes)
-- [x] **Phase 4**: Grading System (LLM-as-judge, metrics, forensics)
-- [x] **Phase 5**: Self-Improvement (Expansion, strategies, versioning)
-- [x] **Phase 6**: Memory System (STM, LTM, context retrieval)
-
-**267 tests passing** | All core phases complete
+- [ ] **Concurrent execution** - Parallel node processing
+- [ ] **Streaming responses** - Real-time output
+- [ ] **Persistent memory** - Cross-session learning
+- [ ] **Model fine-tuning** - Domain adaptation
+- [ ] **C/C++ port** - Performance optimization
 
 ---
 
