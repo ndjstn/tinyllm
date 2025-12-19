@@ -18,6 +18,7 @@ This document outlines the development phases for TinyLLM. Each phase builds on 
 │  Phase 4: Grading             ████████████████████  COMPLETE ✓      │
 │  Phase 5: Self-Improvement    ████████████████████  COMPLETE ✓      │
 │  Phase 6: Memory              ████████████████████  COMPLETE ✓      │
+│  Phase 7: Advanced Features   ████████████████████  COMPLETE ✓      │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -238,13 +239,46 @@ tinyllm chat
 
 ---
 
+## Phase 7: Advanced Features
+
+**Goal**: Parallel execution, iterative workflows, and data transformation.
+
+**Status**: ✅ Complete
+
+### Deliverables
+
+| Component | File | Status |
+|-----------|------|--------|
+| Fanout Node | `src/tinyllm/nodes/fanout.py` | ✅ |
+| Loop Node | `src/tinyllm/nodes/loop.py` | ✅ |
+| Transform Node | `src/tinyllm/nodes/transform.py` | ✅ |
+| Fanout Tests | `tests/unit/test_fanout.py` | ✅ |
+| Loop Tests | `tests/unit/test_loop.py` | ✅ |
+| Transform Tests | `tests/unit/test_transform.py` | ✅ |
+
+### Features
+
+**FanoutNode** - Parallel execution with 4 aggregation strategies:
+- FIRST_SUCCESS: Return first successful result
+- ALL: Collect all results
+- MAJORITY_VOTE: Return most common answer
+- BEST_SCORE: Return highest scored result
+
+**LoopNode** - Iterative workflows with 4 termination conditions:
+- FIXED_COUNT: Run N iterations
+- UNTIL_SUCCESS: Loop until success
+- UNTIL_CONDITION: Loop until condition met
+- WHILE_CONDITION: Loop while condition holds
+
+**TransformNode** - Data transformation with 13 transform types:
+- Text: uppercase, lowercase, strip, truncate
+- JSON: extract, wrap, parse, stringify
+- Regex: extract, replace
+- Structural: template, split, join
+
+---
+
 ## Future Phases
-
-### Phase 7: Advanced Features
-
-- Parallel execution (fanout)
-- Iterative workflows (loops)
-- Dynamic graph modification
 
 ### Phase 8: Observability
 
@@ -277,6 +311,7 @@ tinyllm chat
 | **M5: Graded Outputs** | LLM judges outputs | ✅ Complete |
 | **M6: First Expansion** | Node expands automatically | ✅ Complete |
 | **M7: Memory System** | Context persists | ✅ Complete |
+| **M8: Advanced Workflows** | Parallel execution and loops | ✅ Complete |
 
 ---
 
@@ -294,7 +329,10 @@ tinyllm chat
 | Spawning | 53+ |
 | Merging | 35+ |
 | Pruning | 76+ |
-| **Total** | **457 tests** |
+| Fanout Node | 45 |
+| Loop Node | 44 |
+| Transform Node | 41 |
+| **Total** | **587 tests** |
 
 ---
 
@@ -306,6 +344,7 @@ tinyllm chat
 | 0.2.0 | Phase 2-3 complete | ✅ Released |
 | 0.3.0 | Phase 4 complete | ✅ Released |
 | 0.4.0 | Phase 5-6 complete | ✅ Released |
+| 0.5.0 | Phase 7 complete | ✅ Released |
 | 1.0.0 | Stable release | 🚧 In Progress |
 
 ---
