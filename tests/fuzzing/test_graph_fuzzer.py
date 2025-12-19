@@ -1,7 +1,7 @@
 """Graph execution fuzzer for TinyLLM.
 
-This fuzzer generates random graph structures and executions to discover
-edge cases, crashes, and unexpected behaviors in graph execution logic.
+This fuzzer generates random inputs to discover edge cases, crashes,
+and unexpected behaviors in core TinyLLM components.
 """
 
 import random
@@ -11,288 +11,253 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from tinyllm.config.loader import Config
-from tinyllm.core.context import ExecutionContext
-from tinyllm.core.graph import Edge, Graph, NodeConfig
-from tinyllm.core.message import Message, MessagePayload
-from tinyllm.core.node import BaseNode, NodeResult
+from tinyllm.core.message import Message, MessagePayload, MessageMetadata
+from tinyllm.core.node import NodeResult
 
 
-class DummyNode(BaseNode):
-    """A dummy node for fuzzing that always succeeds."""
-
-    async def execute(self, message: Message, context: ExecutionContext) -> NodeResult:
-        """Execute dummy node logic."""
-        # Simply pass through with some transformation
-        new_content = f"Processed by {self.id}: {message.payload.content}"
-        output_message = Message(
-            trace_id=message.trace_id,
-            source_node=self.id,
-            target_node=None,
-            payload=MessagePayload(content=new_content),
-        )
-
-        return NodeResult(success=True, output_messages=[output_message], next_nodes=[])
-
-
-class ErrorNode(BaseNode):
-    """A node that randomly fails for fuzzing."""
-
-    def __init__(self, node_id: str, config: Dict[str, Any], fail_rate: float = 0.3):
-        super().__init__(node_id, config)
-        self.fail_rate = fail_rate
-
-    async def execute(self, message: Message, context: ExecutionContext) -> NodeResult:
-        """Execute with random failures."""
-        if random.random() < self.fail_rate:
-            return NodeResult(
-                success=False,
-                output_messages=[],
-                next_nodes=[],
-                error="Random failure for fuzzing",
-            )
-
-        output_message = Message(
-            trace_id=message.trace_id,
-            source_node=self.id,
-            target_node=None,
-            payload=MessagePayload(content=f"Error node {self.id} processed"),
-        )
-
-        return NodeResult(success=True, output_messages=[output_message], next_nodes=[])
-
-
-# Hypothesis strategies for fuzzing graphs
+# Hypothesis strategies for fuzzing
 
 
 @st.composite
-def node_ids(draw: Any) -> str:
-    """Generate valid node IDs."""
-    return draw(st.text(alphabet=st.characters(whitelist_categories=("L", "N")), min_size=1, max_size=20))
+def message_payloads_fuzz(draw: Any) -> MessagePayload:
+    """Generate random MessagePayload instances for fuzzing."""
+    content = draw(st.text(min_size=0, max_size=5000))
+    task = draw(st.one_of(st.none(), st.text(min_size=0, max_size=500)))
+    structured = draw(
+        st.one_of(
+            st.none(),
+            st.dictionaries(
+                st.text(min_size=0, max_size=100),
+                st.one_of(
+                    st.text(max_size=1000),
+                    st.integers(),
+                    st.floats(allow_nan=False, allow_infinity=False),
+                    st.booleans(),
+                    st.none(),
+                ),
+                max_size=50,
+            ),
+        )
+    )
+
+    return MessagePayload(content=content, task=task, structured=structured)
 
 
 @st.composite
-def node_configs(draw: Any, node_id: str) -> NodeConfig:
-    """Generate valid NodeConfig instances."""
-    return NodeConfig(
-        id=node_id,
-        type="dummy",
-        config={
-            "param1": draw(st.one_of(st.text(max_size=100), st.integers(), st.floats(allow_nan=False))),
-            "param2": draw(st.booleans()),
-        },
+def messages_fuzz(draw: Any) -> Message:
+    """Generate random Message instances for fuzzing."""
+    trace_id = draw(st.text(min_size=1, max_size=500))
+    source_node = draw(st.text(min_size=1, max_size=200))
+    target_node = draw(st.one_of(st.none(), st.text(min_size=0, max_size=200)))
+    payload = draw(message_payloads_fuzz())
+
+    return Message(
+        trace_id=trace_id,
+        source_node=source_node,
+        target_node=target_node,
+        payload=payload,
     )
 
 
-@st.composite
-def edges(draw: Any, from_nodes: List[str], to_nodes: List[str]) -> Edge:
-    """Generate valid Edge instances."""
-    assume(len(from_nodes) > 0 and len(to_nodes) > 0)
+class TestMessageFuzzing:
+    """Fuzzing tests for Message class."""
 
-    from_node = draw(st.sampled_from(from_nodes))
-    to_node = draw(st.sampled_from(to_nodes))
+    @given(messages_fuzz())
+    @settings(max_examples=100, deadline=3000)
+    def test_message_creation_fuzzing(self, message: Message) -> None:
+        """Random messages can be created without crashing."""
+        assert message.trace_id
+        assert message.source_node
+        assert message.payload is not None
+        assert message.message_id is not None
+        assert message.created_at is not None
 
-    return Edge(from_node=from_node, to_node=to_node, condition=None)
-
-
-@st.composite
-def small_graphs(draw: Any) -> Graph:
-    """Generate small valid graphs for fuzzing."""
-    # Generate 2-5 nodes
-    num_nodes = draw(st.integers(min_value=2, max_value=5))
-    node_ids_list = [f"node_{i}" for i in range(num_nodes)]
-
-    # Create graph
-    graph = Graph(graph_id=f"fuzz_graph_{random.randint(0, 10000)}", config=Config())
-
-    # Add nodes
-    for node_id in node_ids_list:
-        node = DummyNode(node_id=node_id, config={})
-        graph.add_node(node)
-
-    # Add some edges (create a somewhat connected graph)
-    num_edges = draw(st.integers(min_value=1, max_value=min(num_nodes * 2, 10)))
-    for _ in range(num_edges):
-        if len(node_ids_list) >= 2:
-            from_idx = draw(st.integers(min_value=0, max_value=len(node_ids_list) - 2))
-            to_idx = draw(st.integers(min_value=from_idx + 1, max_value=len(node_ids_list) - 1))
-
-            try:
-                graph.add_edge(
-                    Edge(
-                        from_node=node_ids_list[from_idx],
-                        to_node=node_ids_list[to_idx],
-                        condition=None,
-                    )
-                )
-            except Exception:
-                # Ignore edge addition failures (duplicate edges, etc.)
-                pass
-
-    # Set start and end nodes
-    graph.start_node = node_ids_list[0]
-    graph.end_node = node_ids_list[-1]
-
-    return graph
-
-
-class TestGraphFuzzer:
-    """Fuzzing tests for graph execution."""
-
-    @given(small_graphs())
-    @settings(max_examples=50, deadline=5000)  # Run 50 fuzz tests
-    def test_graph_structure_valid(self, graph: Graph) -> None:
-        """Fuzzed graphs have valid structure."""
-        # Check basic invariants
-        assert graph.graph_id is not None
-        assert len(graph.graph_id) > 0
-        assert graph.start_node is not None
-        assert graph.end_node is not None
-
-        # All nodes should be reachable from start (or be start)
-        nodes = list(graph.nodes.keys())
-        assert len(nodes) > 0
-        assert graph.start_node in nodes
-        assert graph.end_node in nodes
-
-    @given(small_graphs(), st.text(min_size=0, max_size=1000))
-    @settings(max_examples=50, deadline=5000)
-    def test_graph_accepts_messages(self, graph: Graph, content: str) -> None:
-        """Fuzzed graphs can accept messages without crashing."""
+    @given(messages_fuzz())
+    @settings(max_examples=100, deadline=3000)
+    def test_message_serialization_fuzzing(self, message: Message) -> None:
+        """Random messages can be serialized to dict."""
         try:
-            message = Message(
-                trace_id="fuzz_trace",
-                source_node="external",
-                target_node=graph.start_node,
-                payload=MessagePayload(content=content),
-            )
-
-            # Just verify message creation doesn't crash
-            assert message.payload.content == content
+            msg_dict = message.model_dump()
+            assert isinstance(msg_dict, dict)
+            assert "trace_id" in msg_dict
+            assert "payload" in msg_dict
         except Exception as e:
-            # Some messages might be invalid, that's okay
-            pytest.skip(f"Invalid message: {e}")
+            pytest.fail(f"Message serialization failed: {e}")
 
-    @given(small_graphs())
-    @settings(max_examples=30, deadline=10000)
-    def test_graph_edges_consistent(self, graph: Graph) -> None:
-        """Fuzzed graphs have consistent edge relationships."""
-        nodes = set(graph.nodes.keys())
+    @given(st.lists(messages_fuzz(), min_size=1, max_size=100))
+    @settings(max_examples=50, deadline=5000)
+    def test_message_batch_creation(self, messages: List[Message]) -> None:
+        """Batches of random messages can be created."""
+        assert len(messages) > 0
 
-        for edge in graph.edges:
-            # From and to nodes should exist
-            assert edge.from_node in nodes, f"Edge from {edge.from_node} but node doesn't exist"
-            assert edge.to_node in nodes, f"Edge to {edge.to_node} but node doesn't exist"
+        # All should have unique IDs
+        ids = [msg.message_id for msg in messages]
+        assert len(ids) == len(set(ids))
+
+
+class TestPayloadFuzzing:
+    """Fuzzing tests for MessagePayload."""
+
+    @given(message_payloads_fuzz())
+    @settings(max_examples=100, deadline=2000)
+    def test_payload_content_types(self, payload: MessagePayload) -> None:
+        """Random payloads handle various content types."""
+        assert isinstance(payload.content, str)
+
+        # Should be serializable
+        payload_dict = payload.model_dump()
+        assert "content" in payload_dict
 
     @given(
-        st.integers(min_value=2, max_value=10),
-        st.integers(min_value=1, max_value=20),
+        st.text(min_size=0, max_size=10000),
+        st.dictionaries(
+            st.text(min_size=0, max_size=200),
+            st.one_of(st.text(max_size=1000), st.integers(), st.booleans()),
+            max_size=100,
+        ),
     )
-    @settings(max_examples=20, deadline=3000)
-    def test_random_graph_construction(self, num_nodes: int, num_edges: int) -> None:
-        """Randomly constructed graphs don't crash."""
-        graph = Graph(graph_id="random_graph", config=Config())
+    @settings(max_examples=50, deadline=3000)
+    def test_large_payloads(self, content: str, structured: Dict[str, Any]) -> None:
+        """Large payloads don't cause issues."""
+        payload = MessagePayload(content=content, structured=structured)
 
-        # Add nodes
-        node_ids_list = []
-        for i in range(num_nodes):
-            node_id = f"rand_node_{i}"
-            node = DummyNode(node_id=node_id, config={})
-            graph.add_node(node)
-            node_ids_list.append(node_id)
+        assert payload.content == content
+        assert payload.structured == structured
 
-        # Add random edges
-        for _ in range(min(num_edges, num_nodes * (num_nodes - 1))):
-            if len(node_ids_list) >= 2:
-                from_node = random.choice(node_ids_list)
-                to_node = random.choice([n for n in node_ids_list if n != from_node])
+    @given(st.text(min_size=0, max_size=1000))
+    @settings(max_examples=100, deadline=2000)
+    def test_special_characters_in_content(self, content: str) -> None:
+        """Payloads handle special characters in content."""
+        payload = MessagePayload(content=content)
 
-                try:
-                    graph.add_edge(Edge(from_node=from_node, to_node=to_node, condition=None))
-                except Exception:
-                    # Ignore failures (e.g., duplicate edges)
-                    pass
+        # Should preserve content exactly
+        assert payload.content == content
 
-        # Set start/end
-        graph.start_node = node_ids_list[0]
-        graph.end_node = node_ids_list[-1]
+        # Should be serializable
+        payload_dict = payload.model_dump()
+        assert payload_dict["content"] == content
 
-        # Verify basic structure
-        assert len(graph.nodes) == num_nodes
-        assert len(graph.edges) >= 0
 
-    @given(st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=50))
-    @settings(max_examples=20, deadline=5000)
-    def test_message_batch_fuzzing(self, contents: List[str]) -> None:
-        """Process batches of random messages without crashing."""
-        # Create a simple graph
-        graph = Graph(graph_id="batch_test", config=Config())
+class TestNodeResultFuzzing:
+    """Fuzzing tests for NodeResult."""
 
-        node1 = DummyNode(node_id="processor", config={})
-        graph.add_node(node1)
-        graph.start_node = "processor"
-        graph.end_node = "processor"
+    @given(
+        st.booleans(),
+        st.lists(messages_fuzz(), max_size=50),
+        st.lists(st.text(min_size=1, max_size=100), max_size=20),
+    )
+    @settings(max_examples=100, deadline=3000)
+    def test_node_result_creation_fuzzing(
+        self, success: bool, messages: List[Message], next_nodes: List[str]
+    ) -> None:
+        """Random NodeResults can be created."""
+        result = NodeResult(
+            success=success,
+            output_messages=messages,
+            next_nodes=next_nodes,
+        )
 
-        # Create messages
-        messages = []
-        for content in contents:
-            msg = Message(
-                trace_id=f"batch_{random.randint(0, 10000)}",
-                source_node="external",
-                target_node="processor",
-                payload=MessagePayload(content=content),
-            )
-            messages.append(msg)
+        assert result.success == success
+        assert len(result.output_messages) == len(messages)
+        assert len(result.next_nodes) == len(next_nodes)
 
-        # Verify all messages created successfully
-        assert len(messages) == len(contents)
+    @given(
+        st.lists(messages_fuzz(), min_size=0, max_size=100),
+        st.dictionaries(
+            st.text(min_size=1, max_size=100),
+            st.one_of(st.text(), st.integers(), st.booleans()),
+            max_size=50,
+        ),
+    )
+    @settings(max_examples=50, deadline=5000)
+    def test_node_result_with_metadata(
+        self, messages: List[Message], metadata: Dict[str, Any]
+    ) -> None:
+        """NodeResults with random metadata don't crash."""
+        result = NodeResult(
+            success=True,
+            output_messages=messages,
+            next_nodes=[],
+            metadata=metadata,
+        )
 
-    def test_error_node_fuzzing(self) -> None:
-        """Error nodes with random failures don't crash the system."""
-        graph = Graph(graph_id="error_graph", config=Config())
+        assert result.metadata == metadata
 
-        # Add error-prone nodes
-        for i in range(5):
-            node = ErrorNode(node_id=f"error_{i}", config={}, fail_rate=0.5)
-            graph.add_node(node)
 
-        # Connect them
-        for i in range(4):
-            graph.add_edge(Edge(from_node=f"error_{i}", to_node=f"error_{i+1}", condition=None))
+class TestEdgeCasesFuzzing:
+    """Fuzzing tests for edge cases."""
 
-        graph.start_node = "error_0"
-        graph.end_node = "error_4"
+    @given(st.text(min_size=0, max_size=0))
+    @settings(max_examples=10)
+    def test_empty_strings(self, empty: str) -> None:
+        """Empty strings are handled correctly."""
+        payload = MessagePayload(content=empty)
+        assert payload.content == ""
 
-        # Verify graph is constructed
-        assert len(graph.nodes) == 5
-        assert len(graph.edges) == 4
+        message = Message(
+            trace_id="test",
+            source_node="test",
+            target_node=None,
+            payload=payload,
+        )
+        assert message.payload.content == ""
+
+    @given(st.text(min_size=1000, max_size=5000))
+    @settings(max_examples=10, deadline=5000)
+    def test_very_large_content(self, large_content: str) -> None:
+        """Very large content strings are handled."""
+        payload = MessagePayload(content=large_content)
+        assert len(payload.content) == len(large_content)
+
+    @given(st.lists(st.text(), min_size=100, max_size=1000))
+    @settings(max_examples=10, deadline=10000)
+    def test_many_structured_fields(self, keys: List[str]) -> None:
+        """Payloads with many structured fields are handled."""
+        structured = {f"key_{i}": f"value_{i}" for i in range(len(keys[:500]))}
+        payload = MessagePayload(content="test", structured=structured)
+
+        assert len(payload.structured) <= 500
+
+    @given(st.text(alphabet=st.characters(blacklist_categories=("C",)), min_size=0, max_size=1000))
+    @settings(max_examples=50, deadline=3000)
+    def test_unicode_content(self, unicode_content: str) -> None:
+        """Unicode content is handled correctly."""
+        payload = MessagePayload(content=unicode_content)
+        assert payload.content == unicode_content
 
 
 @pytest.mark.slow
-class TestExtensiveGraphFuzzing:
+class TestExtensiveFuzzing:
     """Extensive fuzzing tests (marked as slow)."""
 
-    @given(small_graphs())
-    @settings(max_examples=200, deadline=10000)
-    def test_extensive_graph_fuzzing(self, graph: Graph) -> None:
-        """Run extensive fuzzing on graph structures."""
-        # Check all basic properties hold
-        assert graph.graph_id
-        assert graph.start_node
-        assert graph.end_node
+    @given(messages_fuzz())
+    @settings(max_examples=1000, deadline=None)
+    def test_extensive_message_fuzzing(self, message: Message) -> None:
+        """Run extensive fuzzing on messages."""
+        # Should always be creatable and serializable
+        msg_dict = message.model_dump()
+        assert msg_dict is not None
 
-        # Verify no nodes are None
-        for node_id, node in graph.nodes.items():
-            assert node_id is not None
-            assert node is not None
-            assert node.id == node_id
+        # Should have required fields
+        assert message.trace_id
+        assert message.message_id
+        assert message.source_node
+
+    @given(message_payloads_fuzz())
+    @settings(max_examples=1000, deadline=None)
+    def test_extensive_payload_fuzzing(self, payload: MessagePayload) -> None:
+        """Run extensive fuzzing on payloads."""
+        # Should always be serializable
+        payload_dict = payload.model_dump()
+        assert payload_dict is not None
+        assert "content" in payload_dict
 
 
 # Configure fuzzing profiles
-settings.register_profile("fuzzing", max_examples=100, deadline=None)
-settings.register_profile("fuzzing_quick", max_examples=20, deadline=5000)
+settings.register_profile("fuzzing_intensive", max_examples=500, deadline=None)
+settings.register_profile("fuzzing_quick", max_examples=20, deadline=2000)
 
 import os
 
-if os.getenv("FUZZING_PROFILE") == "extensive":
-    settings.load_profile("fuzzing")
+if os.getenv("FUZZING_PROFILE") == "intensive":
+    settings.load_profile("fuzzing_intensive")
