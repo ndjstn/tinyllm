@@ -451,7 +451,7 @@ class TestCircuitBreaker:
             config = CircuitBreakerConfig(
                 failure_threshold=2,
                 success_threshold=2,
-                timeout_ms=100,  # Short timeout for testing
+                timeout_ms=1000,  # Minimum timeout
             )
             circuit = CircuitBreaker(
                 name="test-service",
@@ -473,7 +473,7 @@ class TestCircuitBreaker:
             assert circuit._stats.state == CircuitState.OPEN
 
             # Wait for timeout to transition to half-open
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(1.1)
 
             # Succeed twice to close circuit
             for _ in range(2):
