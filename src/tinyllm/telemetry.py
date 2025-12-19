@@ -436,6 +436,9 @@ def set_correlation_id(correlation_id: str) -> None:
     # Add to span attributes if tracing is enabled
     set_span_attribute(_correlation_id_key, correlation_id)
 
+    # Add to baggage for cross-service propagation
+    set_baggage(_correlation_id_key, correlation_id)
+
     # Add to logging context
     bind_context(correlation_id=correlation_id)
 
@@ -446,16 +449,19 @@ def get_correlation_id() -> Optional[str]:
     Returns:
         Current correlation ID, or None if not set.
     """
-    if not is_telemetry_enabled():
-        return None
+    # First try to get from baggage
+    correlation_id = get_baggage(_correlation_id_key)
+    if correlation_id:
+        return correlation_id
 
-    span = trace.get_current_span()
-    if span and span.is_recording():
-        # Try to get from span attributes
-        span_context = span.get_span_context()
-        if span_context and span_context.is_valid:
-            # Use trace ID as correlation ID if not explicitly set
-            return format(span_context.trace_id, "032x")
+    # Fall back to trace ID if available
+    if is_telemetry_enabled():
+        span = trace.get_current_span()
+        if span and span.is_recording():
+            span_context = span.get_span_context()
+            if span_context and span_context.is_valid:
+                # Use trace ID as correlation ID if not explicitly set
+                return format(span_context.trace_id, "032x")
 
     return None
 
@@ -489,6 +495,45 @@ def extract_correlation_id(headers: dict[str, str]) -> Optional[str]:
         if header in headers:
             return headers[header]
     return None
+
+
+@contextmanager
+def correlation_context(correlation_id: Optional[str] = None):
+    """Context manager for correlation ID lifecycle.
+
+    Automatically generates a correlation ID if not provided, sets it for
+    the duration of the context, and cleans up afterwards.
+
+    Args:
+        correlation_id: Optional correlation ID. If None, generates a new one.
+
+    Yields:
+        The active correlation ID.
+
+    Example:
+        >>> with correlation_context() as corr_id:
+        ...     # All logs and traces will include this correlation ID
+        ...     process_request()
+        >>> # Correlation ID is cleaned up
+    """
+    # Generate or use provided correlation ID
+    corr_id = correlation_id or generate_correlation_id()
+
+    # Store original correlation ID (if any)
+    original_corr_id = get_correlation_id()
+
+    try:
+        # Set correlation ID for this context
+        set_correlation_id(corr_id)
+        yield corr_id
+    finally:
+        # Restore original correlation ID
+        if original_corr_id:
+            set_correlation_id(original_corr_id)
+        else:
+            # Clean up if there was no original
+            remove_baggage(_correlation_id_key)
+            unbind_context("correlation_id")
 
 
 # Baggage propagation for cross-service context
@@ -1165,6 +1210,7 @@ __all__ = [
     "get_correlation_id",
     "propagate_correlation_id",
     "extract_correlation_id",
+    "correlation_context",
     "set_baggage",
     "get_baggage",
     "get_all_baggage",

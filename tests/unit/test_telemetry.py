@@ -264,3 +264,104 @@ class TestTraceHelpers:
         ):
             # Should not raise
             pass
+
+
+class TestCorrelationID:
+    """Tests for correlation ID functionality."""
+
+    def test_generate_correlation_id(self):
+        """Test correlation ID generation."""
+        from tinyllm.telemetry import generate_correlation_id
+
+        corr_id = generate_correlation_id()
+        assert corr_id is not None
+        assert len(corr_id) == 36  # UUID format
+
+        # Each should be unique
+        corr_id2 = generate_correlation_id()
+        assert corr_id != corr_id2
+
+    def test_correlation_context_auto_generate(self):
+        """Test correlation context with auto-generated ID."""
+        from tinyllm.telemetry import correlation_context, get_correlation_id
+
+        # No correlation ID initially
+        assert get_correlation_id() is None
+
+        with correlation_context() as corr_id:
+            # Correlation ID should be set
+            assert corr_id is not None
+            assert get_correlation_id() == corr_id
+
+        # Correlation ID should be cleaned up
+        assert get_correlation_id() is None
+
+    def test_correlation_context_provided_id(self):
+        """Test correlation context with provided ID."""
+        from tinyllm.telemetry import correlation_context, get_correlation_id
+
+        test_id = "test-correlation-123"
+
+        with correlation_context(test_id) as corr_id:
+            assert corr_id == test_id
+            assert get_correlation_id() == test_id
+
+        # Cleaned up after
+        assert get_correlation_id() is None
+
+    def test_correlation_context_nested(self):
+        """Test nested correlation contexts."""
+        from tinyllm.telemetry import correlation_context, get_correlation_id
+
+        outer_id = "outer-123"
+        inner_id = "inner-456"
+
+        with correlation_context(outer_id):
+            assert get_correlation_id() == outer_id
+
+            with correlation_context(inner_id):
+                assert get_correlation_id() == inner_id
+
+            # Should restore outer ID
+            assert get_correlation_id() == outer_id
+
+        # All cleaned up
+        assert get_correlation_id() is None
+
+    def test_propagate_correlation_id(self):
+        """Test correlation ID propagation to headers."""
+        from tinyllm.telemetry import (
+            correlation_context,
+            propagate_correlation_id,
+        )
+
+        test_id = "test-123"
+
+        with correlation_context(test_id):
+            headers = {}
+            headers = propagate_correlation_id(headers)
+
+            # Should not add correlation ID when telemetry disabled
+            # (it needs baggage which requires telemetry)
+            # Just verify it doesn't crash
+            assert isinstance(headers, dict)
+
+    def test_extract_correlation_id(self):
+        """Test correlation ID extraction from headers."""
+        from tinyllm.telemetry import extract_correlation_id
+
+        # Test with standard header
+        headers = {"X-Correlation-ID": "test-123"}
+        assert extract_correlation_id(headers) == "test-123"
+
+        # Test with lowercase header
+        headers = {"x-correlation-id": "test-456"}
+        assert extract_correlation_id(headers) == "test-456"
+
+        # Test with alternate format
+        headers = {"correlation-id": "test-789"}
+        assert extract_correlation_id(headers) == "test-789"
+
+        # Test with no header
+        headers = {}
+        assert extract_correlation_id(headers) is None

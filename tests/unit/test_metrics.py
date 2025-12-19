@@ -36,12 +36,15 @@ def get_label_value(labels: Dict[Any, Any], key: str) -> Any:
     return None
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def metrics_collector(isolated_metrics_collector: MetricsCollector) -> MetricsCollector:
     """Provide a fresh metrics collector for each test.
 
     Uses the isolated_metrics_collector fixture from conftest to ensure
     clean state between tests.
+
+    This fixture is autouse to ensure ALL tests in this module get
+    isolated metrics, preventing state pollution between tests.
     """
     return isolated_metrics_collector
 
@@ -49,14 +52,17 @@ def metrics_collector(isolated_metrics_collector: MetricsCollector) -> MetricsCo
 class TestMetricsCollector:
     """Test MetricsCollector functionality."""
 
-    def test_singleton_pattern(self) -> None:
-        """Test that MetricsCollector follows singleton pattern."""
+    def test_singleton_pattern(self, metrics_collector: MetricsCollector) -> None:
+        """Test that MetricsCollector follows singleton pattern within a session."""
+        # Within the same test, multiple calls return the same instance
         collector1 = MetricsCollector()
         collector2 = MetricsCollector()
         collector3 = get_metrics_collector()
 
         assert collector1 is collector2
         assert collector2 is collector3
+        # Also verify it's the same as our fixture instance
+        assert collector1 is metrics_collector
 
     def test_increment_request_count(self, metrics_collector: MetricsCollector) -> None:
         """Test request counter increments."""
@@ -449,3 +455,118 @@ class TestMetricsIntegration:
                         break
 
         assert found_metric, "Metric with correct labels not found"
+
+
+class TestCardinalityControls:
+    """Test cardinality controls and limits."""
+
+    def test_cardinality_tracker_init(self, metrics_collector: MetricsCollector) -> None:
+        """Test cardinality tracker initialization."""
+        tracker = metrics_collector.cardinality_tracker
+        assert tracker.max_cardinality == 1000
+        assert len(tracker.label_sets) == 0
+        assert len(tracker.dropped_counts) == 0
+
+    def test_cardinality_check_and_add(self, metrics_collector: MetricsCollector) -> None:
+        """Test adding labels within cardinality limit."""
+        tracker = metrics_collector.cardinality_tracker
+
+        # First label combination should be accepted
+        assert tracker.check_and_add("test_metric", ("model1", "graph1"))
+        assert tracker.get_cardinality("test_metric") == 1
+
+        # Same combination should be accepted again
+        assert tracker.check_and_add("test_metric", ("model1", "graph1"))
+        assert tracker.get_cardinality("test_metric") == 1
+
+        # Different combination should be accepted
+        assert tracker.check_and_add("test_metric", ("model2", "graph2"))
+        assert tracker.get_cardinality("test_metric") == 2
+
+    def test_cardinality_limit_exceeded(self, metrics_collector: MetricsCollector) -> None:
+        """Test cardinality limit enforcement."""
+        from tinyllm.metrics import CardinalityTracker
+
+        # Create tracker with low limit
+        tracker = CardinalityTracker(max_cardinality=5)
+
+        # Add up to limit
+        for i in range(5):
+            assert tracker.check_and_add("limited_metric", (f"label_{i}",))
+
+        assert tracker.get_cardinality("limited_metric") == 5
+
+        # Next addition should be rejected
+        assert not tracker.check_and_add("limited_metric", ("label_6",))
+        assert tracker.get_cardinality("limited_metric") == 5
+        assert tracker.dropped_counts["limited_metric"] == 1
+
+    def test_cardinality_stats(self, metrics_collector: MetricsCollector) -> None:
+        """Test cardinality statistics retrieval."""
+        tracker = metrics_collector.cardinality_tracker
+        tracker.check_and_add("metric1", ("a", "b"))
+        tracker.check_and_add("metric1", ("c", "d"))
+        tracker.check_and_add("metric2", ("x", "y"))
+
+        stats = tracker.get_stats()
+
+        assert "metrics" in stats
+        assert "total_label_combinations" in stats
+        assert "max_cardinality" in stats
+        assert stats["max_cardinality"] == 1000
+        assert stats["total_label_combinations"] == 3
+        assert "metric1" in stats["metrics"]
+        assert "metric2" in stats["metrics"]
+        assert stats["metrics"]["metric1"]["cardinality"] == 2
+        assert stats["metrics"]["metric2"]["cardinality"] == 1
+
+    def test_cardinality_reset(self, metrics_collector: MetricsCollector) -> None:
+        """Test cardinality tracker reset."""
+        tracker = metrics_collector.cardinality_tracker
+        tracker.check_and_add("test", ("a",))
+
+        assert tracker.get_cardinality("test") == 1
+
+        tracker.reset()
+
+        assert tracker.get_cardinality("test") == 0
+        assert len(tracker.label_sets) == 0
+        assert len(tracker.dropped_counts) == 0
+
+    def test_cardinality_with_metrics(self, metrics_collector: MetricsCollector) -> None:
+        """Test cardinality controls integrate with metrics collection."""
+        from tinyllm.metrics import CardinalityTracker
+
+        # Create collector with low cardinality limit
+        test_collector = MetricsCollector(max_cardinality=3)
+
+        # Add requests up to limit
+        test_collector.increment_request_count(model="m1", graph="g1")
+        test_collector.increment_request_count(model="m2", graph="g2")
+        test_collector.increment_request_count(model="m3", graph="g3")
+
+        # Fourth request should use fallback labels
+        test_collector.increment_request_count(model="m4", graph="g4")
+
+        # Check that fallback "other" label was used
+        found_other = False
+        for metric in REGISTRY.collect():
+            if metric.name == "tinyllm_requests":
+                for sample in metric.samples:
+                    if (get_label_value(sample.labels, "model") == "other"
+                        and get_label_value(sample.labels, "graph") == "other"):
+                        found_other = True
+                        break
+
+        assert found_other, "Fallback 'other' label not found when cardinality exceeded"
+
+    def test_get_cardinality_stats_from_collector(self, metrics_collector: MetricsCollector) -> None:
+        """Test getting cardinality stats from collector."""
+        metrics_collector.increment_request_count(model="test1", graph="g1")
+        metrics_collector.increment_request_count(model="test2", graph="g2")
+
+        stats = metrics_collector.get_cardinality_stats()
+
+        assert "metrics" in stats
+        assert "total_label_combinations" in stats
+        assert stats["total_label_combinations"] >= 2

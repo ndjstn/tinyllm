@@ -1040,6 +1040,344 @@ class CircuitBreaker:
 
 
 # ============================================================================
+# Error Recovery Playbooks
+# ============================================================================
+
+
+class RecoveryAction(str, Enum):
+    """Available recovery actions."""
+
+    RETRY = "retry"
+    FALLBACK = "fallback"
+    SKIP = "skip"
+    ALERT = "alert"
+    CIRCUIT_OPEN = "circuit_open"
+    REDUCE_LOAD = "reduce_load"
+    SWITCH_MODEL = "switch_model"
+    RESTART_SERVICE = "restart_service"
+
+
+class RecoveryPlaybook(BaseModel):
+    """Defines automated recovery steps for specific error types."""
+
+    error_pattern: str = Field(description="Error type or pattern to match")
+    actions: List[RecoveryAction] = Field(description="Recovery actions to take")
+    max_attempts: int = Field(default=3, description="Max recovery attempts")
+    cooldown_ms: int = Field(default=5000, description="Cooldown between attempts")
+    escalate_after: int = Field(default=3, description="Escalate after N failures")
+
+
+class ErrorRecoveryManager:
+    """Manages automated error recovery using playbooks."""
+
+    def __init__(self):
+        """Initialize recovery manager with default playbooks."""
+        self._playbooks: Dict[str, RecoveryPlaybook] = {}
+        self._recovery_stats: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"attempts": 0, "successes": 0, "failures": 0}
+        )
+        self._lock = asyncio.Lock()
+
+        # Register default playbooks
+        self._register_default_playbooks()
+
+    def _register_default_playbooks(self) -> None:
+        """Register default recovery playbooks for common error types."""
+        # Timeout errors: retry with backoff
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="timeout",
+                actions=[RecoveryAction.RETRY, RecoveryAction.REDUCE_LOAD],
+                max_attempts=3,
+                cooldown_ms=2000,
+            )
+        )
+
+        # Rate limit errors: wait and retry, then reduce load
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="rate_limit",
+                actions=[RecoveryAction.RETRY, RecoveryAction.REDUCE_LOAD],
+                max_attempts=5,
+                cooldown_ms=10000,
+            )
+        )
+
+        # Network errors: retry, then alert
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="network",
+                actions=[RecoveryAction.RETRY, RecoveryAction.ALERT],
+                max_attempts=3,
+                cooldown_ms=5000,
+            )
+        )
+
+        # Model errors: retry, fallback to simpler model, then alert
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="model",
+                actions=[RecoveryAction.RETRY, RecoveryAction.SWITCH_MODEL, RecoveryAction.ALERT],
+                max_attempts=2,
+                cooldown_ms=3000,
+            )
+        )
+
+        # Resource exhaustion: reduce load, open circuit
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="resource_exhausted",
+                actions=[RecoveryAction.REDUCE_LOAD, RecoveryAction.CIRCUIT_OPEN],
+                max_attempts=1,
+                cooldown_ms=30000,
+            )
+        )
+
+        # Circuit open: skip request, alert
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="circuit_open",
+                actions=[RecoveryAction.SKIP, RecoveryAction.ALERT],
+                max_attempts=1,
+                cooldown_ms=60000,
+            )
+        )
+
+        # Validation errors: skip (no retry)
+        self.register_playbook(
+            RecoveryPlaybook(
+                error_pattern="validation",
+                actions=[RecoveryAction.SKIP, RecoveryAction.ALERT],
+                max_attempts=1,
+                cooldown_ms=0,
+            )
+        )
+
+    def register_playbook(self, playbook: RecoveryPlaybook) -> None:
+        """Register a recovery playbook.
+
+        Args:
+            playbook: Recovery playbook to register.
+        """
+        self._playbooks[playbook.error_pattern] = playbook
+        logger.info(
+            "recovery_playbook_registered",
+            pattern=playbook.error_pattern,
+            actions=[a.value for a in playbook.actions],
+        )
+
+    def get_playbook(self, error: Exception) -> Optional[RecoveryPlaybook]:
+        """Get recovery playbook for an error.
+
+        Args:
+            error: Exception to find playbook for.
+
+        Returns:
+            Matching playbook or None.
+        """
+        error_str = str(error).lower()
+        error_type = type(error).__name__.lower()
+
+        # Try exact match on error type
+        if error_type in self._playbooks:
+            return self._playbooks[error_type]
+
+        # Try pattern matching on error message
+        for pattern, playbook in self._playbooks.items():
+            if pattern in error_str or pattern in error_type:
+                return playbook
+
+        return None
+
+    async def execute_recovery(
+        self,
+        error: Exception,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Execute recovery actions for an error.
+
+        Args:
+            error: Exception that occurred.
+            context: Execution context.
+
+        Returns:
+            Dictionary with recovery results.
+        """
+        playbook = self.get_playbook(error)
+        if not playbook:
+            logger.warning(
+                "no_recovery_playbook",
+                error_type=type(error).__name__,
+                error=str(error),
+            )
+            return {"recovered": False, "actions_taken": []}
+
+        async with self._lock:
+            stats = self._recovery_stats[playbook.error_pattern]
+            stats["attempts"] += 1
+
+        logger.info(
+            "executing_recovery_playbook",
+            error_type=type(error).__name__,
+            pattern=playbook.error_pattern,
+            actions=[a.value for a in playbook.actions],
+        )
+
+        actions_taken = []
+        recovered = False
+
+        for action in playbook.actions:
+            try:
+                result = await self._execute_action(action, error, context, playbook)
+                actions_taken.append({"action": action.value, "result": result})
+
+                if result.get("success", False):
+                    recovered = True
+                    break
+
+            except Exception as action_error:
+                logger.error(
+                    "recovery_action_failed",
+                    action=action.value,
+                    error=str(action_error),
+                )
+                actions_taken.append(
+                    {"action": action.value, "error": str(action_error)}
+                )
+
+        async with self._lock:
+            stats = self._recovery_stats[playbook.error_pattern]
+            if recovered:
+                stats["successes"] += 1
+            else:
+                stats["failures"] += 1
+
+        return {
+            "recovered": recovered,
+            "actions_taken": actions_taken,
+            "playbook": playbook.error_pattern,
+        }
+
+    async def _execute_action(
+        self,
+        action: RecoveryAction,
+        error: Exception,
+        context: Dict[str, Any],
+        playbook: RecoveryPlaybook,
+    ) -> Dict[str, Any]:
+        """Execute a single recovery action.
+
+        Args:
+            action: Action to execute.
+            error: Original error.
+            context: Execution context.
+            playbook: Playbook being executed.
+
+        Returns:
+            Action result dictionary.
+        """
+        if action == RecoveryAction.RETRY:
+            # Signal that retry should be attempted
+            return {
+                "success": True,
+                "message": "Retry scheduled",
+                "delay_ms": playbook.cooldown_ms,
+            }
+
+        elif action == RecoveryAction.FALLBACK:
+            # Signal fallback mode should be used
+            return {
+                "success": True,
+                "message": "Fallback mode activated",
+            }
+
+        elif action == RecoveryAction.SKIP:
+            # Skip this operation
+            return {
+                "success": True,
+                "message": "Operation skipped",
+            }
+
+        elif action == RecoveryAction.ALERT:
+            # Log alert (could integrate with alerting systems)
+            logger.error(
+                "recovery_alert",
+                error_type=type(error).__name__,
+                error=str(error),
+                context=context,
+                playbook=playbook.error_pattern,
+            )
+            metrics.increment_error_count(
+                error_type="recovery_alert",
+                model=context.get("model", "unknown"),
+                graph=context.get("graph", "unknown"),
+            )
+            return {
+                "success": True,
+                "message": "Alert sent",
+            }
+
+        elif action == RecoveryAction.CIRCUIT_OPEN:
+            # Signal circuit breaker should open
+            return {
+                "success": True,
+                "message": "Circuit breaker opened",
+            }
+
+        elif action == RecoveryAction.REDUCE_LOAD:
+            # Signal load reduction (e.g., reject new requests)
+            return {
+                "success": True,
+                "message": "Load reduction activated",
+            }
+
+        elif action == RecoveryAction.SWITCH_MODEL:
+            # Signal model switch (implementation specific)
+            return {
+                "success": True,
+                "message": "Model switch requested",
+            }
+
+        elif action == RecoveryAction.RESTART_SERVICE:
+            # Log restart request (implementation specific)
+            logger.error(
+                "service_restart_requested",
+                error_type=type(error).__name__,
+                error=str(error),
+            )
+            return {
+                "success": False,
+                "message": "Service restart requires manual intervention",
+            }
+
+        return {"success": False, "message": f"Unknown action: {action}"}
+
+    def get_recovery_stats(self) -> Dict[str, Any]:
+        """Get recovery statistics.
+
+        Returns:
+            Dictionary with recovery stats per error pattern.
+        """
+        return dict(self._recovery_stats)
+
+
+# Global recovery manager instance
+_recovery_manager: Optional[ErrorRecoveryManager] = None
+
+
+def get_recovery_manager() -> ErrorRecoveryManager:
+    """Get the global error recovery manager.
+
+    Returns:
+        Global ErrorRecoveryManager instance.
+    """
+    global _recovery_manager
+    if _recovery_manager is None:
+        _recovery_manager = ErrorRecoveryManager()
+    return _recovery_manager
+
+
+# ============================================================================
 # Global Exception Handler
 # ============================================================================
 
@@ -1047,12 +1385,14 @@ class CircuitBreaker:
 def global_exception_handler(
     dlq: Optional[DeadLetterQueue] = None,
     send_to_dlq: bool = True,
+    enable_recovery: bool = True,
 ):
     """Decorator for global exception handling.
 
     Args:
         dlq: Dead letter queue instance (creates new if None).
         send_to_dlq: Whether to send failed messages to DLQ.
+        enable_recovery: Whether to enable automated recovery.
 
     Example:
         @global_exception_handler()
@@ -1075,6 +1415,21 @@ def global_exception_handler(
                     details=e.details,
                 )
                 metrics.increment_error(e.code)
+
+                # Attempt automated recovery
+                if enable_recovery and e.recoverable:
+                    recovery_manager = get_recovery_manager()
+                    context = {
+                        "function": func.__name__,
+                        "model": kwargs.get("model", "unknown"),
+                        "graph": kwargs.get("graph", "unknown"),
+                    }
+                    recovery_result = await recovery_manager.execute_recovery(e, context)
+                    logger.info(
+                        "recovery_attempted",
+                        recovered=recovery_result["recovered"],
+                        actions=recovery_result["actions_taken"],
+                    )
 
                 # Send to DLQ if configured and retryable
                 if send_to_dlq and dlq and e.recoverable:

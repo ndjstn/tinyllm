@@ -1,0 +1,200 @@
+# serializer version: 1
+# name: TestComplexStructureSnapshots.test_batch_messages_snapshot
+  list([
+    dict({
+      'parent_id': None,
+      'payload': dict({
+        'confidence': None,
+        'content': 'Message 0',
+        'error': None,
+        'metadata': dict({
+        }),
+        'route': None,
+        'structured': dict({
+          'index': 0,
+        }),
+        'task': None,
+        'tool_call': None,
+        'tool_calls': None,
+        'tool_result': None,
+      }),
+      'source_node': 'node_0',
+      'target_node': 'node_1',
+      'trace_id': 'batch_trace_0',
+    }),
+    dict({
+      'parent_id': None,
+      'payload': dict({
+        'confidence': None,
+        'content': 'Message 1',
+        'error': None,
+        'metadata': dict({
+        }),
+        'route': None,
+        'structured': dict({
+          'index': 1,
+        }),
+        'task': None,
+        'tool_call': None,
+        'tool_calls': None,
+        'tool_result': None,
+      }),
+      'source_node': 'node_1',
+      'target_node': 'node_2',
+      'trace_id': 'batch_trace_1',
+    }),
+    dict({
+      'parent_id': None,
+      'payload': dict({
+        'confidence': None,
+        'content': 'Message 2',
+        'error': None,
+        'metadata': dict({
+        }),
+        'route': None,
+        'structured': dict({
+          'index': 2,
+        }),
+        'task': None,
+        'tool_call': None,
+        'tool_calls': None,
+        'tool_result': None,
+      }),
+      'source_node': 'node_2',
+      'target_node': 'node_3',
+      'trace_id': 'batch_trace_2',
+    }),
+  ])
+# ---
+# name: TestComplexStructureSnapshots.test_nested_payload_snapshot
+  dict({
+    'confidence': None,
+    'content': 'Complex nested structure',
+    'error': None,
+    'metadata': dict({
+    }),
+    'route': None,
+    'structured': dict({
+      'level1': dict({
+        'items': list([
+          'a',
+          'b',
+          'c',
+        ]),
+        'level2': dict({
+          'level3': dict({
+            'enabled': True,
+            'values': list([
+              1,
+              2,
+              3,
+            ]),
+          }),
+        }),
+      }),
+      'metadata': dict({
+        'timestamp': '2024-01-01T00:00:00Z',
+        'version': '1.0',
+      }),
+    }),
+    'task': None,
+    'tool_call': None,
+    'tool_calls': None,
+    'tool_result': None,
+  })
+# ---
+# name: TestMessageSnapshots.test_message_snapshot
+  dict({
+    'parent_id': None,
+    'payload': dict({
+      'confidence': None,
+      'content': 'Test message content',
+      'error': None,
+      'metadata': dict({
+      }),
+      'route': None,
+      'structured': dict({
+        'key1': 'value1',
+        'key2': 42,
+      }),
+      'task': 'test_task',
+      'tool_call': None,
+      'tool_calls': None,
+      'tool_result': None,
+    }),
+    'source_node': 'node_a',
+    'target_node': 'node_b',
+    'trace_id': 'test_trace_123',
+  })
+# ---
+# name: TestMessageSnapshots.test_payload_snapshot
+  dict({
+    'confidence': None,
+    'content': 'Sample content for snapshot test',
+    'error': None,
+    'metadata': dict({
+    }),
+    'route': None,
+    'structured': dict({
+      'count': 3,
+      'enabled': True,
+      'items': list([
+        'item1',
+        'item2',
+        'item3',
+      ]),
+    }),
+    'task': 'analysis',
+    'tool_call': None,
+    'tool_calls': None,
+    'tool_result': None,
+  })
+# ---
+# name: TestNodeResultSnapshots.test_node_result_error_snapshot
+  dict({
+    'error': 'Validation failed: missing required field',
+    'metadata': dict({
+      'error_code': 'VALIDATION_ERROR',
+    }),
+    'next_nodes': list([
+    ]),
+    'output_messages': list([
+    ]),
+    'success': False,
+  })
+# ---
+# name: TestNodeResultSnapshots.test_node_result_success_snapshot
+  dict({
+    'error': None,
+    'metadata': dict({
+      'model': 'test_model',
+      'processing_time': 0.5,
+    }),
+    'next_nodes': list([
+      'next_node_1',
+      'next_node_2',
+    ]),
+    'output_messages': list([
+      dict({
+        'parent_id': None,
+        'payload': dict({
+          'confidence': None,
+          'content': 'Processed output',
+          'error': None,
+          'metadata': dict({
+          }),
+          'route': None,
+          'structured': None,
+          'task': None,
+          'tool_call': None,
+          'tool_calls': None,
+          'tool_result': None,
+        }),
+        'source_node': 'processor',
+        'target_node': 'output',
+        'trace_id': 'trace_456',
+      }),
+    ]),
+    'success': True,
+  })
+# ---
