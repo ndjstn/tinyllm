@@ -308,30 +308,19 @@ class TestDataChaos:
     @pytest.mark.asyncio
     async def test_malformed_configuration(self, execution_context):
         """Test behavior with malformed node configurations."""
-        # Invalid transform type
-        definition = NodeDefinition(
-            id="transform.malformed",
-            type=NodeType.TRANSFORM,
-            config={
-                "transforms": [
-                    {"type": "uppercase"},
-                    {"type": "invalid_transform_type"},
-                ],
-            },
-        )
-        node = TransformNode(definition)
-
-        msg = Message(
-            trace_id="malformed-test",
-            source_node="test",
-            payload=MessagePayload(content="Test"),
-        )
-
-        # Should fail gracefully
-        result = await node.execute(msg, execution_context)
-        # The first valid transform might succeed, or whole thing might fail
-        # Either way, shouldn't crash
-        assert result is not None
+        # Invalid transform type - should raise ValueError during construction
+        with pytest.raises(ValueError):
+            definition = NodeDefinition(
+                id="transform.malformed",
+                type=NodeType.TRANSFORM,
+                config={
+                    "transforms": [
+                        {"type": "uppercase"},
+                        {"type": "invalid_transform_type"},
+                    ],
+                },
+            )
+            node = TransformNode(definition)
 
     @pytest.mark.asyncio
     async def test_race_condition_simulation(self, execution_context):
