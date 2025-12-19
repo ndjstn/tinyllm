@@ -17,6 +17,13 @@ from tinyllm.core.graph import Graph, Edge, ValidationError
 from tinyllm.core.builder import GraphBuilder, load_graph
 from tinyllm.core.executor import Executor, ExecutorConfig, ExecutionError
 from tinyllm.core.trace import ExecutionTrace, NodeExecution, TraceRecorder
+from tinyllm.core.completion import (
+    CompletionStatus,
+    CompletionSignals,
+    CompletionAnalysis,
+    TaskCompletionDetector,
+    is_task_complete,
+)
 
 __all__ = [
     # Message types
@@ -49,4 +56,10 @@ __all__ = [
     "ExecutionTrace",
     "NodeExecution",
     "TraceRecorder",
+    # Completion detection
+    "CompletionStatus",
+    "CompletionSignals",
+    "CompletionAnalysis",
+    "TaskCompletionDetector",
+    "is_task_complete",
 ]

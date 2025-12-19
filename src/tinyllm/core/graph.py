@@ -52,6 +52,7 @@ class Graph:
         self.version = definition.version
         self.name = definition.name
         self.description = definition.description
+        self.allow_cycles = definition.allow_cycles
 
         self._nodes: Dict[str, BaseNode] = {}
         self._edges: List[Edge] = []
@@ -240,17 +241,272 @@ class Graph:
         """Check if a node is protected."""
         return node_id in self._protected
 
+    def detect_cycles(self) -> List[List[str]]:
+        """Detect all cycles in the graph using DFS.
+
+        Returns:
+            List of cycles, where each cycle is a list of node IDs.
+            Empty list if the graph is acyclic.
+        """
+        cycles: List[List[str]] = []
+        visited: Set[str] = set()
+        rec_stack: Set[str] = set()
+        path: List[str] = []
+
+        def dfs(node_id: str) -> None:
+            """Depth-first search to detect cycles."""
+            visited.add(node_id)
+            rec_stack.add(node_id)
+            path.append(node_id)
+
+            # Get all neighbors
+            for edge in self.get_outgoing_edges(node_id):
+                neighbor = edge.to_node
+
+                if neighbor not in visited:
+                    dfs(neighbor)
+                elif neighbor in rec_stack:
+                    # Found a cycle - extract it from path
+                    cycle_start = path.index(neighbor)
+                    cycle = path[cycle_start:] + [neighbor]
+                    cycles.append(cycle)
+
+            path.pop()
+            rec_stack.remove(node_id)
+
+        # Run DFS from each unvisited node
+        for node_id in self._nodes:
+            if node_id not in visited:
+                dfs(node_id)
+
+        return cycles
+
+    def is_acyclic(self) -> bool:
+        """Quick check if graph is acyclic (DAG).
+
+        Returns:
+            True if graph has no cycles, False otherwise.
+        """
+        visited: Set[str] = set()
+        rec_stack: Set[str] = set()
+
+        def has_cycle(node_id: str) -> bool:
+            """Check if there's a cycle starting from this node."""
+            visited.add(node_id)
+            rec_stack.add(node_id)
+
+            for edge in self.get_outgoing_edges(node_id):
+                neighbor = edge.to_node
+                if neighbor not in visited:
+                    if has_cycle(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+
+            rec_stack.remove(node_id)
+            return False
+
+        # Check all nodes
+        for node_id in self._nodes:
+            if node_id not in visited:
+                if has_cycle(node_id):
+                    return False
+
+        return True
+
+    def topological_sort(self) -> List[str]:
+        """Return nodes in topological order (execution order).
+
+        Returns:
+            List of node IDs in topological order.
+
+        Raises:
+            ValueError: If the graph contains cycles.
+        """
+        if not self.is_acyclic():
+            raise ValueError("Cannot perform topological sort on a graph with cycles")
+
+        visited: Set[str] = set()
+        stack: List[str] = []
+
+        def dfs(node_id: str) -> None:
+            """DFS for topological sorting."""
+            visited.add(node_id)
+
+            for edge in self.get_outgoing_edges(node_id):
+                neighbor = edge.to_node
+                if neighbor not in visited:
+                    dfs(neighbor)
+
+            stack.append(node_id)
+
+        # Visit all nodes
+        for node_id in self._nodes:
+            if node_id not in visited:
+                dfs(node_id)
+
+        # Return reversed stack (topological order)
+        return list(reversed(stack))
+
+    def _find_unreachable_nodes(self) -> Set[str]:
+        """Find nodes that are not reachable from any entry point.
+
+        Returns:
+            Set of unreachable node IDs.
+        """
+        reachable: Set[str] = set()
+
+        def dfs(node_id: str) -> None:
+            """Mark all reachable nodes."""
+            if node_id in reachable:
+                return
+            reachable.add(node_id)
+
+            for edge in self.get_outgoing_edges(node_id):
+                dfs(edge.to_node)
+
+        # Start from all entry points
+        for entry in self._entry_points:
+            if entry in self._nodes:
+                dfs(entry)
+
+        # Find unreachable nodes
+        unreachable = set(self._nodes.keys()) - reachable
+        return unreachable
+
+    def _find_dead_end_nodes(self) -> Set[str]:
+        """Find non-exit nodes with no outgoing edges.
+
+        Returns:
+            Set of dead-end node IDs.
+        """
+        dead_ends: Set[str] = set()
+
+        for node_id in self._nodes:
+            # Skip exit points
+            if node_id in self._exit_points:
+                continue
+
+            # Check if node has no outgoing edges
+            if not self.get_outgoing_edges(node_id):
+                dead_ends.add(node_id)
+
+        return dead_ends
+
+    def to_mermaid(self) -> str:
+        """Export graph as Mermaid diagram format.
+
+        Returns:
+            Mermaid diagram string.
+        """
+        lines = ["graph TD"]
+
+        # Add nodes with styling
+        for node_id, node in self._nodes.items():
+            label = node.name if hasattr(node, "name") and node.name else node_id
+
+            # Style based on node type
+            if node_id in self._entry_points:
+                lines.append(f"    {node_id}[[\"{label}\"]]")
+            elif node_id in self._exit_points:
+                lines.append(f"    {node_id}[[\"{label}\"]]")
+            else:
+                lines.append(f"    {node_id}[\"{label}\"]")
+
+        # Add edges
+        for edge in self._edges:
+            from_node = edge.from_node
+            to_node = edge.to_node
+
+            # Add condition or weight as label
+            if edge.condition:
+                label = edge.condition
+                lines.append(f"    {from_node} -->|{label}| {to_node}")
+            elif edge.weight != 1.0:
+                label = f"{edge.weight:.2f}"
+                lines.append(f"    {from_node} -->|{label}| {to_node}")
+            else:
+                lines.append(f"    {from_node} --> {to_node}")
+
+        # Add styling
+        lines.append("")
+        entry_nodes = ",".join(self._entry_points)
+        exit_nodes = ",".join(self._exit_points)
+        if entry_nodes:
+            lines.append(f"    classDef entryClass fill:#90EE90,stroke:#333,stroke-width:2px")
+            lines.append(f"    class {entry_nodes} entryClass")
+        if exit_nodes:
+            lines.append(f"    classDef exitClass fill:#FFB6C1,stroke:#333,stroke-width:2px")
+            lines.append(f"    class {exit_nodes} exitClass")
+
+        return "\n".join(lines)
+
+    def to_dot(self) -> str:
+        """Export graph as GraphViz DOT format.
+
+        Returns:
+            DOT format string.
+        """
+        lines = ["digraph G {", "    rankdir=TB;", "    node [shape=box];", ""]
+
+        # Add nodes with styling
+        for node_id, node in self._nodes.items():
+            label = node.name if hasattr(node, "name") and node.name else node_id
+
+            # Style based on node type
+            style_attrs = []
+            if node_id in self._entry_points:
+                style_attrs.append('fillcolor=lightgreen')
+                style_attrs.append('style=filled')
+                style_attrs.append('shape=doubleoctagon')
+            elif node_id in self._exit_points:
+                style_attrs.append('fillcolor=lightpink')
+                style_attrs.append('style=filled')
+                style_attrs.append('shape=doubleoctagon')
+
+            if style_attrs:
+                attrs = ", ".join(style_attrs)
+                lines.append(f'    {node_id} [label="{label}", {attrs}];')
+            else:
+                lines.append(f'    {node_id} [label="{label}"];')
+
+        lines.append("")
+
+        # Add edges
+        for edge in self._edges:
+            from_node = edge.from_node
+            to_node = edge.to_node
+
+            # Add condition or weight as label
+            edge_attrs = []
+            if edge.condition:
+                edge_attrs.append(f'label="{edge.condition}"')
+            elif edge.weight != 1.0:
+                edge_attrs.append(f'label="{edge.weight:.2f}"')
+
+            if edge_attrs:
+                attrs = ", ".join(edge_attrs)
+                lines.append(f"    {from_node} -> {to_node} [{attrs}];")
+            else:
+                lines.append(f"    {from_node} -> {to_node};")
+
+        lines.append("}")
+        return "\n".join(lines)
+
     def validate(self) -> List[ValidationError]:
         """Validate graph structure.
 
-        Checks for:
+        Comprehensive validation checks:
         - All referenced nodes exist
-        - Entry/exit points exist
-        - No orphan nodes (except protected)
-        - Paths from entry to exit
+        - Entry/exit points exist and are valid
+        - Edges reference existing nodes
+        - Cycle detection (warning)
+        - Unreachable nodes detection
+        - Dead-end nodes (non-exit nodes with no outgoing edges)
+        - Orphan nodes (disconnected from the graph)
 
         Returns:
-            List of validation errors (empty if valid).
+            List of validation errors and warnings (empty if valid).
         """
         errors: List[ValidationError] = []
 
@@ -261,6 +517,7 @@ class Graph:
                     ValidationError(
                         message=f"Entry point '{entry}' not found in nodes",
                         node_id=entry,
+                        severity="error",
                     )
                 )
 
@@ -271,6 +528,7 @@ class Graph:
                     ValidationError(
                         message=f"Exit point '{exit_point}' not found in nodes",
                         node_id=exit_point,
+                        severity="error",
                     )
                 )
 
@@ -281,6 +539,7 @@ class Graph:
                     ValidationError(
                         message=f"Edge from_node '{edge.from_node}' not found",
                         node_id=edge.from_node,
+                        severity="error",
                     )
                 )
             if edge.to_node not in self._nodes:
@@ -288,23 +547,85 @@ class Graph:
                     ValidationError(
                         message=f"Edge to_node '{edge.to_node}' not found",
                         node_id=edge.to_node,
+                        severity="error",
                     )
                 )
 
-        # Check for orphan nodes
+        # Detect cycles
+        cycles = self.detect_cycles()
+        if cycles:
+            # If cycles are not allowed, treat as error; otherwise warning
+            severity = "error" if not self.allow_cycles else "warning"
+            for cycle in cycles:
+                cycle_path = " -> ".join(cycle)
+                errors.append(
+                    ValidationError(
+                        message=f"Cycle detected: {cycle_path}",
+                        node_id=cycle[0] if cycle else None,
+                        severity=severity,
+                    )
+                )
+
+        # Check for unreachable nodes
+        unreachable = self._find_unreachable_nodes()
+        for node_id in unreachable:
+            if node_id not in self._protected:
+                errors.append(
+                    ValidationError(
+                        message=f"Node '{node_id}' is unreachable from entry points",
+                        node_id=node_id,
+                        severity="warning",
+                    )
+                )
+
+        # Check for dead-end nodes (non-exit nodes with no outgoing edges)
+        dead_ends = self._find_dead_end_nodes()
+        for node_id in dead_ends:
+            errors.append(
+                ValidationError(
+                    message=f"Node '{node_id}' is a dead-end (no outgoing edges, not an exit point)",
+                    node_id=node_id,
+                    severity="warning",
+                )
+            )
+
+        # Check for orphan nodes (completely disconnected)
         connected = set()
         for edge in self._edges:
             connected.add(edge.from_node)
             connected.add(edge.to_node)
         connected.update(self._entry_points)
+        connected.update(self._exit_points)
 
         for node_id in self._nodes:
             if node_id not in connected and node_id not in self._protected:
                 errors.append(
                     ValidationError(
-                        message=f"Node '{node_id}' is not connected",
+                        message=f"Node '{node_id}' is orphaned (not connected to the graph)",
                         node_id=node_id,
                         severity="warning",
+                    )
+                )
+
+        # Check that entry points have outgoing edges
+        for entry in self._entry_points:
+            if entry in self._nodes and not self.get_outgoing_edges(entry):
+                errors.append(
+                    ValidationError(
+                        message=f"Entry point '{entry}' has no outgoing edges",
+                        node_id=entry,
+                        severity="error",
+                    )
+                )
+
+        # Check that exit points are reachable
+        for exit_point in self._exit_points:
+            if exit_point in unreachable:
+                errors.append(
+                    ValidationError(
+                        message=f"Exit point '{exit_point}' is unreachable from entry points",
+                        node_id=exit_point,
+                        severity="error",
                     )
                 )
 

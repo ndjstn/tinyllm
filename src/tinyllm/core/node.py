@@ -12,9 +12,12 @@ from pydantic import BaseModel, Field
 
 from tinyllm.config.graph import NodeDefinition, NodeType
 from tinyllm.core.message import Message
+from tinyllm.logging import get_logger
 
 if TYPE_CHECKING:
     from tinyllm.core.context import ExecutionContext
+
+logger = get_logger(__name__, component="node")
 
 
 class NodeStats(BaseModel):
@@ -170,6 +173,17 @@ class BaseNode(ABC):
             self._stats.failed_executions += 1
         self._stats.total_latency_ms += latency_ms
         self._stats.last_execution = datetime.utcnow()
+
+        # Log stats periodically (every 10 executions)
+        if self._stats.total_executions % 10 == 0:
+            logger.debug(
+                "node_stats_update",
+                node_id=self.id,
+                node_type=self.type.value,
+                total_executions=self._stats.total_executions,
+                success_rate=self._stats.success_rate,
+                avg_latency_ms=self._stats.avg_latency_ms,
+            )
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} id={self.id} type={self.type}>"
