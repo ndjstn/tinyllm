@@ -1,0 +1,57 @@
+@startuml Recursive Expansion
+!theme cerulean-outline
+
+skinparam shadowing false
+skinparam activityDiamondBackgroundColor #fff9c4
+
+title TinyLLM Recursive Expansion Process
+
+start
+
+:Node Execution;
+
+:Update Statistics;
+
+if (Success Rate < Threshold?) then (yes)
+    :Analyze Failure Patterns;
+
+    fork
+        :Pattern A\nArithmetic Errors;
+    fork again
+        :Pattern B\nAlgebra Errors;
+    fork again
+        :Pattern C\nCalculus Errors;
+    end fork
+
+    :Cluster Similar Failures;
+
+    :Generate Expansion Strategies;
+
+    partition "Strategy Evaluation" {
+        :Strategy 1: Specialized Prompts;
+        :Strategy 2: Tool Augmentation;
+        :Strategy 3: Model Upgrade;
+        :Strategy 4: Sub-routing;
+    }
+
+    :LLM Judge Evaluates Strategies;
+
+    :Select Best Strategy;
+
+    if (Strategy == Sub-routing?) then (yes)
+        :Create New Router Node;
+        :Create Specialist Nodes;
+        :Update Graph Edges;
+        :Add to Protected List;
+    else (no)
+        :Apply Selected Strategy;
+    endif
+
+else (no)
+endif
+
+:Continue Execution;
+
+stop
+
+@enduml

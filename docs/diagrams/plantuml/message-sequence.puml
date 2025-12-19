@@ -1,0 +1,73 @@
+@startuml Message Flow Sequence
+!theme cerulean-outline
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+title TinyLLM Message Flow
+
+actor User
+participant "Entry Node" as Entry
+participant "Router Node" as Router
+participant "Specialist Node" as Specialist
+participant "Tool" as Tool
+participant "Gate Node" as Gate
+participant "Exit Node" as Exit
+
+User -> Entry: Submit Query
+activate Entry
+Entry -> Entry: Validate Input
+Entry -> Entry: Create Message\n(trace_id, payload)
+
+Entry -> Router: Forward Message
+deactivate Entry
+activate Router
+
+Router -> Router: Classify Task\n(LLM inference)
+
+alt Single-Label Mode
+    Router -> Specialist: Route to best match
+else Multi-Label Mode
+    Router -> Router: Get multiple labels
+    alt Compound Route Exists
+        Router -> Specialist: Route to compound specialist
+    else Fanout Enabled
+        Router -> Specialist: Parallel execution
+    else Priority Mode
+        Router -> Specialist: Route to highest priority
+    end
+end
+deactivate Router
+
+activate Specialist
+Specialist -> Specialist: Generate Response\n(LLM inference)
+
+opt Tool Required
+    Specialist -> Tool: Invoke Tool
+    activate Tool
+    Tool -> Tool: Execute
+    Tool --> Specialist: Return Result
+    deactivate Tool
+    Specialist -> Specialist: Incorporate Tool Result
+end
+
+Specialist -> Gate: Submit Response
+deactivate Specialist
+activate Gate
+
+Gate -> Gate: Evaluate Quality
+
+alt Pass Quality Check
+    Gate -> Exit: Forward to Exit
+    deactivate Gate
+    activate Exit
+    Exit -> Exit: Package Response
+    Exit --> User: Return Response
+    deactivate Exit
+else Fail Quality Check
+    Gate -> Router: Retry/Expand
+    deactivate Gate
+    note right: May trigger\nrecursive expansion
+end
+
+@enduml

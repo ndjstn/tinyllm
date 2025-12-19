@@ -2,23 +2,30 @@
 
 > **What if each neuron in a neural network was already intelligent?**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│    Traditional Neural Network          TinyLLM Neural Network               │
-│    ═══════════════════════════         ═══════════════════════              │
-│                                                                             │
-│         ○ ○ ○ ○ ○                           🧠 🧠 🧠                        │
-│        ╱│╲│╱│╲│╱│╲                         ╱  │  ╲                          │
-│       ○ ○ ○ ○ ○ ○ ○                      🧠   🧠   🧠                       │
-│        ╲│╱│╲│╱│╲│╱                        ╲   │   ╱                         │
-│         ○ ○ ○ ○ ○                           🧠 🧠                           │
-│                                              │                               │
-│    Millions of simple neurons              🧠                               │
-│    → Emergent intelligence              Dozens of intelligent neurons       │
-│                                         → Emergent superintelligence        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Traditional["Traditional Neural Network"]
+        direction TB
+        T1((○)) & T2((○)) & T3((○)) & T4((○)) & T5((○))
+        T6((○)) & T7((○)) & T8((○)) & T9((○)) & T10((○)) & T11((○)) & T12((○))
+        T13((○)) & T14((○)) & T15((○)) & T16((○)) & T17((○))
+
+        T1 & T2 & T3 & T4 & T5 --> T6 & T7 & T8 & T9 & T10 & T11 & T12
+        T6 & T7 & T8 & T9 & T10 & T11 & T12 --> T13 & T14 & T15 & T16 & T17
+    end
+
+    subgraph TinyLLM["TinyLLM Neural Network"]
+        direction TB
+        L1[🧠] & L2[🧠] & L3[🧠]
+        L4[🧠] & L5[🧠] & L6[🧠]
+        L7[🧠] & L8[🧠]
+
+        L1 & L2 & L3 --> L4 & L5 & L6
+        L4 & L5 & L6 --> L7 & L8
+    end
+
+    Traditional -.->|"Millions of simple neurons\n→ Emergent intelligence"| TinyLLM
+    TinyLLM -.->|"Dozens of intelligent neurons\n→ Emergent superintelligence"| OUT((🎯))
 ```
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -41,9 +48,9 @@ TinyLLM treats small language models (≤3B parameters) as **intelligent neurons
 
 ### Key Innovations
 
-- **Recursive Self-Improvement**: When a node fails, it automatically expands into a router + multiple specialist strategies
-- **Tool-Augmented Neurons**: Models can call calculators, code executors, and search—shifting computation off the LLM
-- **Gamified Training**: Nodes earn XP, level up, and compete on leaderboards
+- **Multi-Dimensional Routing**: Queries spanning multiple domains (code + math) route to specialized compound handlers
+- **Recursive Self-Improvement**: Failing nodes automatically expand into router + specialist strategies
+- **Tool-Augmented Neurons**: Models call calculators, code executors, and search—shifting computation off the LLM
 - **100% Local**: Runs entirely on consumer hardware via Ollama
 
 ---
@@ -53,6 +60,7 @@ TinyLLM treats small language models (≤3B parameters) as **intelligent neurons
 ### Prerequisites
 
 - Python 3.11+
+- [uv](https://github.com/astral-sh/uv) package manager
 - [Ollama](https://ollama.ai) installed and running
 - At least one small model: `ollama pull qwen2.5:3b`
 
@@ -63,8 +71,8 @@ TinyLLM treats small language models (≤3B parameters) as **intelligent neurons
 git clone https://github.com/ndjstn/tinyllm.git
 cd tinyllm
 
-# Install dependencies
-pip install -e .
+# Install dependencies with uv
+uv sync --dev
 
 # Pull recommended models
 ollama pull qwen2.5:0.5b   # Router (tiny, fast)
@@ -72,103 +80,214 @@ ollama pull qwen2.5:3b     # General specialist
 ollama pull granite-code:3b # Code specialist
 
 # Verify installation
-tinyllm doctor
+uv run tinyllm doctor
 ```
 
 ### First Run
 
 ```bash
 # Initialize default configuration
-tinyllm init
+uv run tinyllm init
 
 # Run a simple query
-tinyllm run "What is 2 + 2?"
+uv run tinyllm run "What is 2 + 2?"
 
 # Run with trace output
-tinyllm run --trace "Write a Python function to check if a number is prime"
+uv run tinyllm run --trace "Write a Python function to check if a number is prime"
 
 # Interactive mode
-tinyllm chat
+uv run tinyllm chat
 ```
 
 ---
 
 ## Architecture Overview
 
+```mermaid
+flowchart TB
+    subgraph Input["📥 Input Layer"]
+        USER[/"User Query"/]
+    end
+
+    subgraph Entry["🚪 Entry Layer"]
+        ENTRY[["Entry Node\n(Validation)"]]
+    end
+
+    subgraph Routing["🔀 Routing Layer"]
+        ROUTER{{"Task Router\nqwen2.5:0.5b"}}
+    end
+
+    subgraph Specialists["🎯 Specialist Layer"]
+        CODE[["Code\ngranite-code:3b"]]
+        MATH[["Math\nphi3:mini"]]
+        GENERAL[["General\nqwen2.5:3b"]]
+        CODEMATH[["Code+Math\n(compound)"]]
+    end
+
+    subgraph Tools["🔧 Tool Layer"]
+        CALC[("Calculator")]
+        EXEC[("Executor")]
+    end
+
+    subgraph Quality["✅ Quality Layer"]
+        GATE{{"Quality Gate"}}
+    end
+
+    subgraph Output["📤 Output Layer"]
+        EXIT[["Exit Node"]]
+    end
+
+    USER --> ENTRY
+    ENTRY --> ROUTER
+
+    ROUTER -->|code| CODE
+    ROUTER -->|math| MATH
+    ROUTER -->|general| GENERAL
+    ROUTER -->|"code+math"| CODEMATH
+
+    CODE <-.-> EXEC
+    MATH <-.-> CALC
+
+    CODE & MATH & GENERAL & CODEMATH --> GATE
+
+    GATE -->|pass| EXIT
+    GATE -.->|retry| ROUTER
+
+    classDef input fill:#e3f2fd,stroke:#1565c0
+    classDef entry fill:#f3e5f5,stroke:#7b1fa2
+    classDef router fill:#fff8e1,stroke:#f57f17
+    classDef specialist fill:#e8f5e9,stroke:#2e7d32
+    classDef tool fill:#fce4ec,stroke:#c2185b
+    classDef quality fill:#fff3e0,stroke:#ef6c00
+    classDef output fill:#e0f2f1,stroke:#00695c
+
+    class USER input
+    class ENTRY entry
+    class ROUTER router
+    class CODE,MATH,GENERAL,CODEMATH specialist
+    class CALC,EXEC tool
+    class GATE quality
+    class EXIT output
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                            USER QUERY                                       │
-│                                │                                            │
-│                                ▼                                            │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                         ENTRY NODE                                    │  │
-│  │                    (Input validation)                                 │  │
-│  └───────────────────────────┬──────────────────────────────────────────┘  │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                      TASK ROUTER                                      │  │
-│  │              qwen2.5:0.5b (classification)                            │  │
-│  │         "Is this code? math? factual? creative?"                      │  │
-│  └───────────────────────────┬──────────────────────────────────────────┘  │
-│               ┌──────────────┼──────────────┐                               │
-│               ▼              ▼              ▼                               │
-│  ┌────────────────┐ ┌───────────────┐ ┌────────────────┐                   │
-│  │  CODE SPECIALIST│ │MATH SPECIALIST│ │GENERAL SPECIALIST│                │
-│  │  granite-code:3b│ │   phi3:mini   │ │   qwen2.5:3b    │                 │
-│  │  + code_executor│ │  + calculator │ │                 │                 │
-│  └────────┬───────┘ └───────┬───────┘ └────────┬────────┘                  │
-│           │                 │                   │                           │
-│           └─────────────────┴───────────────────┘                           │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                       QUALITY GATE                                    │  │
-│  │           Rule-based checks + optional LLM judge                      │  │
-│  │                 Pass → Exit | Fail → Retry/Expand                     │  │
-│  └───────────────────────────┬──────────────────────────────────────────┘  │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                         RESPONSE                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────┘
+
+### Multi-Dimensional Routing
+
+Cross-domain queries are routed to specialized handlers:
+
+```mermaid
+flowchart LR
+    QUERY["'Write Python to\ncalculate compound interest'"]
+
+    subgraph Classification
+        ROUTER{{"Multi-Label\nRouter"}}
+        C[/"code ✓"/]
+        M[/"math ✓"/]
+    end
+
+    subgraph CompoundRoutes["Compound Routes"]
+        CM["code + math\n→ code_math_specialist"]
+    end
+
+    SPECIALIST[["Code-Math\nSpecialist"]]
+
+    QUERY --> ROUTER
+    ROUTER --> C & M
+    C & M --> CM
+    CM --> SPECIALIST
+
+    classDef query fill:#e3f2fd
+    classDef router fill:#fff8e1
+    classDef label fill:#c8e6c9
+    classDef compound fill:#e1bee7
+    classDef specialist fill:#b3e5fc
+
+    class QUERY query
+    class ROUTER router
+    class C,M label
+    class CM compound
+    class SPECIALIST specialist
 ```
 
-### How Recursive Expansion Works
+### Recursive Expansion
 
-When a node consistently fails:
+When a node consistently fails, it automatically expands:
 
+```mermaid
+flowchart LR
+    subgraph Before["❌ Before (40% failure)"]
+        R1{{"Router"}}
+        M1[["math_solver"]]
+        R1 --> M1
+    end
+
+    subgraph After["✅ After (expanded)"]
+        R2{{"Router"}}
+        MR{{"math_router"}}
+        A[["arithmetic"]]
+        AL[["algebra"]]
+        CA[["calculus"]]
+
+        R2 --> MR
+        MR --> A & AL & CA
+    end
+
+    Before -.->|"expansion\ntrigger"| After
+
+    classDef router fill:#fff8e1
+    classDef failing fill:#ffcdd2
+    classDef new fill:#c8e6c9
+
+    class R1,R2,MR router
+    class M1 failing
+    class A,AL,CA new
 ```
-BEFORE (failing):                    AFTER (expanded):
-
-┌─────────────┐                      ┌─────────────┐
-│ math_solver │ ────(fails 40%)────► │ math_router │
-└─────────────┘                      └──────┬──────┘
-                                       ┌────┴────┐
-                                       ▼         ▼
-                                ┌──────────┐ ┌──────────┐
-                                │arithmetic│ │ algebra  │
-                                │ solver   │ │ solver   │
-                                └──────────┘ └──────────┘
-```
-
-The system learns which sub-strategies work for which types of math problems.
 
 ---
 
 ## Model Tiers
 
-TinyLLM uses a tiered model architecture:
+```mermaid
+graph LR
+    subgraph T0["T0: Routers (~500MB)"]
+        R1["qwen2.5:0.5b"]
+        R2["tinyllama"]
+    end
+
+    subgraph T1["T1: Specialists (2-3GB)"]
+        S1["granite-code:3b"]
+        S2["qwen2.5:3b"]
+        S3["phi3:mini"]
+    end
+
+    subgraph T2["T2: Workers (5-6GB)"]
+        W1["qwen3:8b"]
+    end
+
+    subgraph T3["T3: Judges (10-15GB)"]
+        J1["qwen3:14b"]
+    end
+
+    T0 -->|"fast routing"| T1
+    T1 -->|"complex tasks"| T2
+    T2 -->|"quality eval"| T3
+
+    classDef t0 fill:#c8e6c9
+    classDef t1 fill:#bbdefb
+    classDef t2 fill:#fff9c4
+    classDef t3 fill:#f8bbd9
+
+    class R1,R2 t0
+    class S1,S2,S3 t1
+    class W1 t2
+    class J1 t3
+```
 
 | Tier | Purpose | Models | VRAM |
 |------|---------|--------|------|
 | **T0** | Routers | qwen2.5:0.5b, tinyllama | ~500MB |
 | **T1** | Specialists | granite-code:3b, qwen2.5:3b, phi3:mini | 2-3GB |
 | **T2** | Workers | qwen3:8b | 5-6GB |
-| **T3** | Judges | qwen3:14b, gpt-oss:20b | 10-15GB |
-
-Small models handle routing (fast, cheap). Larger models only used for judging/grading.
+| **T3** | Judges | qwen3:14b | 10-15GB |
 
 ---
 
@@ -186,35 +305,24 @@ Small models handle routing (fast, cheap). Larger models only used for judging/g
 
 ---
 
-## Benchmarks
+## Project Structure
 
-> **Hardware**: AMD Ryzen 7 3700X (16 threads) | 128GB RAM | 2× RTX 3060 (24GB VRAM)
->
-> *Run `tinyllm benchmark` to reproduce on your hardware*
-
-### Routing Performance
-
-| Model | Task | Accuracy | Latency (p50) | Latency (p99) | Throughput |
-|-------|------|----------|---------------|---------------|------------|
-| qwen2.5:0.5b | classification | *pending* | *pending* | *pending* | *pending* |
-| tinyllama | classification | *pending* | *pending* | *pending* | *pending* |
-
-### Specialist Performance
-
-| Model | Task | Success Rate | Avg Latency | Tokens/s |
-|-------|------|--------------|-------------|----------|
-| granite-code:3b | code generation | *pending* | *pending* | *pending* |
-| qwen2.5:3b | general QA | *pending* | *pending* | *pending* |
-| phi3:mini | math solving | *pending* | *pending* | *pending* |
-
-### Tool vs No-Tool Comparison
-
-| Task | Model Only | Model + Tool | Improvement |
-|------|------------|--------------|-------------|
-| Math (arithmetic) | *pending* | *pending* | *pending* |
-| Code execution | *pending* | *pending* | *pending* |
-
-*Benchmarks are updated automatically via GitHub Actions. See [benchmark workflow](.github/workflows/benchmark.yml).*
+```
+tinyllm/
+├── src/tinyllm/
+│   ├── core/           # Core engine (graph, executor, nodes)
+│   ├── config/         # Configuration models
+│   ├── models/         # LLM client (Ollama)
+│   ├── nodes/          # Node implementations
+│   ├── prompts/        # Prompt loader
+│   └── tools/          # Tool implementations
+├── graphs/             # Graph YAML definitions
+├── prompts/            # Prompt YAML files
+├── tests/              # Test suite
+└── docs/
+    ├── diagrams/       # PlantUML & Mermaid sources
+    └── specs/          # Detailed specifications
+```
 
 ---
 
@@ -227,12 +335,47 @@ Small models handle routing (fast, cheap). Larger models only used for judging/g
 | [Roadmap](docs/ROADMAP.md) | What's planned |
 | [Specifications](docs/specs/) | Detailed component specs |
 
-### Concept Guides
+### Diagrams
 
-- [Neural Network of LLMs](docs/concepts/neural-network-of-llms.md)
-- [Recursive Expansion](docs/concepts/recursive-expansion.md)
-- [Self-Improvement Loop](docs/concepts/self-improvement-loop.md)
-- [Gamification](docs/concepts/gamification.md)
+- [Architecture Overview](docs/diagrams/mermaid/architecture-overview.md)
+- [Node Types](docs/diagrams/mermaid/node-types.md)
+- [Message Flow](docs/diagrams/mermaid/message-flow.md)
+- [Multi-Dimensional Routing](docs/diagrams/mermaid/multi-dimensional-routing.md)
+- [Recursive Expansion](docs/diagrams/mermaid/recursive-expansion.md)
+
+---
+
+## Roadmap
+
+```mermaid
+gantt
+    title TinyLLM Development Roadmap
+    dateFormat YYYY-MM-DD
+
+    section Foundation
+    Config & Models       :done, p0, 2024-01-01, 7d
+    Core Engine          :done, p1, after p0, 7d
+
+    section Nodes & Tools
+    Node Implementations :done, p2, after p1, 7d
+    Multi-Dim Routing    :done, p3, after p2, 3d
+
+    section Quality
+    Grading System       :active, p4, after p3, 7d
+    LLM-as-Judge        :p5, after p4, 5d
+
+    section Self-Improvement
+    Expansion Triggers   :p6, after p5, 7d
+    Graph Mutations      :p7, after p6, 7d
+```
+
+### Current Status
+
+- [x] **Phase 0**: Foundation (Config, Models, Messages)
+- [x] **Phase 1**: Core Engine (Graph, Executor, Nodes)
+- [x] **Phase 2-3**: Routing & Specialists (Router, Model, Tool, Gate nodes)
+- [ ] **Phase 4**: Grading System (LLM-as-judge, metrics)
+- [ ] **Phase 5**: Self-Improvement (Expansion, mutations)
 
 ---
 
@@ -244,14 +387,7 @@ We welcome contributions! TinyLLM is designed for parallel development:
 # Find issues you can work on
 gh issue list --label "good-first-issue"
 gh issue list --label "help-wanted"
-
-# Each issue is atomic and self-contained
-# Pick one, implement it, submit a PR
 ```
-
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
-
-### Contribution Areas
 
 | Area | Skills Needed | Examples |
 |------|---------------|----------|
@@ -262,50 +398,13 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 | 🔧 Tools | Python | Implement calculator, code executor |
 | 📊 Research | ML knowledge | Benchmarking, analysis |
 
----
-
-## Roadmap
-
-### Phase 0: Foundation ✨ **Current**
-- [ ] Config loading system
-- [ ] Pydantic models
-- [ ] Ollama async client
-- [ ] Basic message types
-
-### Phase 1: Core Engine
-- [ ] Node base class
-- [ ] Graph structure
-- [ ] Executor
-
-### Phase 2: First Tools
-- [ ] Calculator
-- [ ] Code executor
-- [ ] Web search
-
-### Phase 3: Routing & Specialists
-- [ ] Router node
-- [ ] Model node
-- [ ] Initial prompts
-
-### Phase 4: Grading System
-- [ ] LLM-as-judge
-- [ ] Metrics tracking
-- [ ] Failure analysis
-
-### Phase 5: Self-Improvement
-- [ ] Expansion triggers
-- [ ] Graph mutations
-- [ ] Pruning
-
-See [ROADMAP.md](docs/ROADMAP.md) for detailed timeline.
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
 ## Philosophy
 
 > "The best way to predict the future is to invent it." — Alan Kay
-
-We believe:
 
 1. **Small models are underrated**: With the right orchestration, small models can match large ones
 2. **Tools beat parameters**: A 3B model with a calculator beats a 70B model doing mental math
@@ -324,8 +423,8 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 Built with:
 - [Ollama](https://ollama.ai) - Local LLM inference
-- [LangGraph](https://github.com/langchain-ai/langgraph) - Graph orchestration
 - [Pydantic](https://pydantic.dev) - Data validation
+- [uv](https://github.com/astral-sh/uv) - Fast Python package manager
 
 ---
 

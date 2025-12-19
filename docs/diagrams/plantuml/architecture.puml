@@ -1,0 +1,88 @@
+@startuml TinyLLM Architecture
+!theme cerulean-outline
+
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+skinparam shadowing false
+
+title TinyLLM System Architecture
+
+package "Input Layer" {
+    [User Query] as UQ
+    [API Request] as API
+}
+
+package "Entry Layer" {
+    component "Entry Node" as ENTRY {
+        [Validation]
+        [Schema Check]
+    }
+}
+
+package "Routing Layer (T0 Models)" {
+    component "Task Router" as ROUTER <<qwen2.5:0.5b>> {
+        [Single-Label]
+        [Multi-Label]
+        [Compound Routes]
+    }
+}
+
+package "Specialist Layer (T1-T2 Models)" {
+    component "Code Specialist" as CODE <<granite-code:3b>>
+    component "Math Specialist" as MATH <<phi3:mini>>
+    component "General Specialist" as GEN <<qwen2.5:3b>>
+    component "Code-Math Specialist" as CODEMATH <<compound>>
+}
+
+package "Tool Layer" {
+    database "Calculator" as CALC
+    database "Code Executor" as EXEC
+    database "Web Search" as SEARCH
+}
+
+package "Quality Layer (T3 Models)" {
+    component "Quality Gate" as GATE {
+        [Expression Check]
+        [LLM Judge]
+    }
+}
+
+package "Output Layer" {
+    [Exit Node] as EXIT
+    [Response] as RESP
+}
+
+UQ --> ENTRY
+API --> ENTRY
+ENTRY --> ROUTER
+
+ROUTER --> CODE : code
+ROUTER --> MATH : math
+ROUTER --> GEN : general
+ROUTER --> CODEMATH : code+math
+
+CODE ..> EXEC : invoke
+MATH ..> CALC : invoke
+GEN ..> SEARCH : invoke
+
+CODE --> GATE
+MATH --> GATE
+GEN --> GATE
+CODEMATH --> GATE
+
+GATE --> EXIT : pass
+GATE --> ROUTER : retry/expand
+
+EXIT --> RESP
+
+note right of ROUTER
+  Multi-dimensional routing
+  for cross-domain queries
+end note
+
+note bottom of GATE
+  Quality evaluation with
+  optional LLM judge
+end note
+
+@enduml

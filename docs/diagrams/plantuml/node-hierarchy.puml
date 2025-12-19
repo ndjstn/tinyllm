@@ -1,0 +1,120 @@
+@startuml Node Hierarchy
+!theme cerulean-outline
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+title TinyLLM Node Type Hierarchy
+
+abstract class BaseNode {
+    +id: str
+    +type: NodeType
+    +name: str
+    +stats: NodeStats
+    --
+    +{abstract} execute(message, context): NodeResult
+    +update_stats(success, latency)
+}
+
+class NodeStats {
+    +total_executions: int
+    +successful_executions: int
+    +failed_executions: int
+    +total_latency_ms: int
+    --
+    +success_rate: float
+    +failure_rate: float
+    +avg_latency_ms: float
+}
+
+class NodeResult {
+    +success: bool
+    +output_messages: List[Message]
+    +next_nodes: List[str]
+    +error: Optional[str]
+    +latency_ms: float
+    +metadata: Dict
+    --
+    +{static} success_result(): NodeResult
+    +{static} failure_result(): NodeResult
+}
+
+class EntryNode {
+    +required_fields: List[str]
+    +input_schema: Optional[str]
+    --
+    +execute(message, context): NodeResult
+}
+
+class ExitNode {
+    +status: str
+    +output_schema: Optional[str]
+    --
+    +execute(message, context): NodeResult
+}
+
+class RouterNode {
+    +model: str
+    +routes: List[RouteDefinition]
+    +multi_label: bool
+    +compound_routes: List[CompoundRoute]
+    +fanout_enabled: bool
+    --
+    +execute(message, context): NodeResult
+    -_execute_single_label()
+    -_execute_multi_label()
+    -_find_compound_route()
+}
+
+class ModelNode {
+    +model: str
+    +temperature: float
+    +system_prompt: str
+    +tools_enabled: bool
+    --
+    +execute(message, context): NodeResult
+}
+
+class ToolNode {
+    +tool_id: str
+    +input_mapping: Dict
+    +continue_on_error: bool
+    --
+    +execute(message, context): NodeResult
+}
+
+class GateNode {
+    +mode: str
+    +conditions: List[GateCondition]
+    +default_target: str
+    --
+    +execute(message, context): NodeResult
+    -_evaluate_expressions()
+    -_evaluate_llm()
+}
+
+BaseNode <|-- EntryNode
+BaseNode <|-- ExitNode
+BaseNode <|-- RouterNode
+BaseNode <|-- ModelNode
+BaseNode <|-- ToolNode
+BaseNode <|-- GateNode
+
+BaseNode --> NodeStats : has
+BaseNode --> NodeResult : returns
+
+enum NodeType {
+    ENTRY
+    EXIT
+    ROUTER
+    MODEL
+    TOOL
+    GATE
+    TRANSFORM
+    LOOP
+    FANOUT
+}
+
+BaseNode --> NodeType : has
+
+@enduml
