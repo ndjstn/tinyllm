@@ -1,6 +1,7 @@
 """Tests for performance and memory profiling."""
 
 import asyncio
+import cProfile
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,12 +9,16 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from tinyllm.profiling import (
+    FlameGraphGenerator,
     MemoryProfiler,
     MemorySnapshot,
     PerformanceProfiler,
     ProfileStats,
     ProfilingContext,
+    SlowQueryDetector,
+    get_flame_graph_generator,
     get_profiling_context,
+    get_slow_query_detector,
     profile,
 )
 
