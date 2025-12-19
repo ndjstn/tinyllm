@@ -779,15 +779,22 @@ def chat(
     model: str = typer.Option("qwen2.5:1.5b", "--model", "-m", help="Model to use"),
     system_prompt: Optional[str] = typer.Option(None, "--system", "-s", help="Custom system prompt"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Stream responses"),
+    agent: bool = typer.Option(False, "--agent", "-a", help="Enable ReAct agent mode with tools"),
 ):
     """Start an interactive chat session.
 
     Commands:
         /model <name> - Switch to a different model
         /models - List available models
+        /tools - List available tools (agent mode only)
         /help - Show available commands
         /clear - Clear conversation history
         /quit or quit - Exit chat
+
+    Agent Mode:
+        Use --agent or -a to enable agent mode. In this mode, the assistant
+        can use tools like web search, calculator, and more to help answer
+        your questions.
     """
     import time
     from tinyllm.memory import MemoryStore
@@ -800,16 +807,29 @@ def chat(
     async def _chat():
         from tinyllm.models import OllamaClient
 
+        # Import agent components if agent mode enabled
+        react_agent = None
+        if agent:
+            from tinyllm.agents import ReActAgent, ReActConfig
+            from tinyllm.tools.calculator import CalculatorTool
+            try:
+                from tinyllm.tools.web_search import WebSearchTool, WebSearchConfig
+                web_search_available = True
+            except ImportError:
+                web_search_available = False
+
         # Display header with model info
+        mode_info = "[bold green]Agent Mode[/bold green] (tools enabled)" if agent else "Standard Mode"
         console.print(Panel.fit(
             f"[bold cyan]TinyLLM Interactive Chat[/bold cyan]\n\n"
             f"[dim]Model:[/dim] {model}\n"
-            f"[dim]Identity:[/dim] TinyLLM Assistant\n"
+            f"[dim]Mode:[/dim] {mode_info}\n"
             f"[dim]Streaming:[/dim] {'enabled' if stream else 'disabled'}\n\n"
             f"[yellow]Commands:[/yellow]\n"
             f"  [dim]• /model <name> - Switch models[/dim]\n"
             f"  [dim]• /models - List available models[/dim]\n"
-            f"  [dim]• /help - Show all commands[/dim]\n"
+            + (f"  [dim]• /tools - List available tools[/dim]\n" if agent else "")
+            + f"  [dim]• /help - Show all commands[/dim]\n"
             f"  [dim]• Type 'quit' or 'exit' to leave[/dim]\n"
             f"  [dim]• Type 'clear' to clear history[/dim]",
             border_style="cyan"
@@ -819,6 +839,30 @@ def chat(
         client = OllamaClient(default_model=model)
         memory = MemoryStore()
         registry = get_model_registry()
+
+        # Initialize agent if in agent mode
+        if agent:
+            config = ReActConfig(
+                max_iterations=10,
+                verbose=False,
+                temperature=0.3,
+            )
+            react_agent = ReActAgent(llm_client=client, config=config)
+
+            # Register default tools
+            react_agent.register_tool("calculator", CalculatorTool())
+            console.print("[dim]Registered tool: calculator[/dim]")
+
+            if web_search_available:
+                search_config = WebSearchConfig(
+                    enable_duckduckgo=True,
+                    enable_searxng=False,
+                    max_results=5,
+                )
+                react_agent.register_tool("web_search", WebSearchTool(config=search_config))
+                console.print("[dim]Registered tool: web_search[/dim]")
+
+            console.print()
 
         # Sync registry with available models
         try:
@@ -852,6 +896,8 @@ def chat(
                         console.print("\n[bold]Available Commands:[/bold]")
                         console.print("  /model <name>  - Switch to a different model")
                         console.print("  /models        - List available models and their stats")
+                        if agent:
+                            console.print("  /tools         - List available tools")
                         console.print("  /clear         - Clear conversation history")
                         console.print("  /help          - Show this help message")
                         console.print("  /quit          - Exit chat")
@@ -905,7 +951,18 @@ def chat(
                         continue
                     elif command == "/clear":
                         memory.clear_stm()
+                        if agent and react_agent:
+                            react_agent.reset()
                         console.print("[yellow]History cleared[/yellow]\n")
+                        continue
+                    elif command == "/tools":
+                        if agent and react_agent:
+                            console.print("\n[bold]Available Tools:[/bold]")
+                            for tool_id, tool in react_agent.tools.items():
+                                console.print(f"  • [green]{tool_id}[/green] - {tool.metadata.description[:60]}...")
+                            console.print()
+                        else:
+                            console.print("[yellow]Tools are only available in agent mode. Use --agent flag.[/yellow]\n")
                         continue
                     else:
                         console.print(f"[yellow]Unknown command: {command}. Type /help for available commands.[/yellow]\n")
@@ -939,15 +996,47 @@ def chat(
                 if context:
                     full_system_prompt += f"\n\nConversation context:\n{context}"
 
-                # Generate response with streaming or standard mode
+                # Generate response with agent mode or standard mode
                 try:
-                    if stream:
+                    start_time = time.monotonic()
+
+                    if agent and react_agent:
+                        # Agent mode - use ReActAgent with tools
+                        with console.status("[bold yellow]Agent thinking...", spinner="dots"):
+                            response_text = await react_agent.run(user_input)
+                            elapsed_time = time.monotonic() - start_time
+
+                        memory.add_message("assistant", response_text)
+
+                        # Display response
+                        console.print("\n[bold green]Assistant:[/bold green]")
+                        if any(marker in response_text for marker in ['```', '**', '##', '- ', '* ']):
+                            console.print(Markdown(response_text))
+                        else:
+                            console.print(f"[green]{response_text}[/green]")
+
+                        # Show trace summary if tools were used
+                        from tinyllm.agents.react import ReActStepType
+                        trace = react_agent.get_trace()
+                        tool_uses = [step for step in trace if step.step_type == ReActStepType.ACTION]
+                        if tool_uses:
+                            tool_names = [s.metadata.get("action", "unknown") for s in tool_uses]
+                            console.print(f"\n[dim]  Used {len(tool_uses)} tool(s): {', '.join(tool_names)}[/dim]")
+
+                        if elapsed_time > 2.0:
+                            console.print(f"[dim]  [{elapsed_time:.1f}s][/dim]")
+
+                        console.print()  # Extra spacing
+
+                        # Record request in registry
+                        registry.record_request(current_model, elapsed_time * 1000, success=True)
+
+                    elif stream:
                         # Streaming mode with live updates
                         console.print("\n[bold green]Assistant:[/bold green] ", end="")
 
                         response_text = ""
                         token_count = 0
-                        start_time = time.monotonic()
 
                         # Stream tokens as they arrive
                         async for chunk in client.generate_stream(
@@ -979,7 +1068,6 @@ def chat(
                     else:
                         # Non-streaming mode with spinner
                         with console.status("[bold yellow]Thinking...", spinner="dots"):
-                            start_time = time.monotonic()
                             response = await client.generate(
                                 prompt=user_input,
                                 system=full_system_prompt,

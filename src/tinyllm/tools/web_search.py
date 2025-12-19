@@ -315,7 +315,7 @@ class SearXNGProvider(SearchProvider):
 
 
 class DuckDuckGoProvider(SearchProvider):
-    """DuckDuckGo search provider using their HTML interface."""
+    """DuckDuckGo search provider using duckduckgo-search package."""
 
     @property
     def name(self) -> str:
@@ -339,48 +339,71 @@ class DuckDuckGoProvider(SearchProvider):
         if not self.available:
             raise ValueError("DuckDuckGo not enabled")
 
-        # Use DuckDuckGo's instant answer API
-        params = {
-            "q": input.query,
-            "format": "json",
-            "no_html": "1",
-            "skip_disambig": "1",
-        }
-
-        # Get instant answer
-        response = await self.client.get(
-            "https://api.duckduckgo.com/",
-            params=params,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        results = []
-
-        # Add abstract if available
-        if data.get("Abstract"):
-            results.append(
-                SearchResult(
-                    title=data.get("Heading", input.query),
-                    url=data.get("AbstractURL", ""),
-                    snippet=data["Abstract"],
-                    score=1.0,
-                    source="duckduckgo",
-                )
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            raise ValueError(
+                "ddgs package not installed. "
+                "Install with: pip install ddgs"
             )
 
-        # Add related topics
-        for topic in data.get("RelatedTopics", []):
-            if isinstance(topic, dict) and "Text" in topic:
+        results = []
+        max_results = input.max_results or self.config.max_results
+
+        # Run the synchronous DDGS in a thread pool to not block async
+        loop = asyncio.get_event_loop()
+
+        def do_search():
+            ddgs = DDGS()
+            # Map time_range to DuckDuckGo format
+            timelimit = None
+            if input.time_range:
+                timelimit_map = {
+                    "day": "d",
+                    "week": "w",
+                    "month": "m",
+                    "year": "y",
+                }
+                timelimit = timelimit_map.get(input.time_range)
+
+            # Use 'wt-wt' for worldwide or map language to region
+            region_map = {
+                "en": "wt-wt",  # worldwide
+                "us": "us-en",
+                "uk": "uk-en",
+                "de": "de-de",
+                "fr": "fr-fr",
+                "es": "es-es",
+            }
+            region = region_map.get(input.language, "wt-wt")
+
+            return list(ddgs.text(
+                input.query,
+                region=region,
+                safesearch="moderate",
+                timelimit=timelimit,
+                max_results=max_results,
+            ))
+
+        search_results = await loop.run_in_executor(None, do_search)
+
+        for idx, item in enumerate(search_results):
+            try:
+                # Calculate score based on position
+                score = max(0.5, 1.0 - (idx * 0.05))
+
                 results.append(
                     SearchResult(
-                        title=topic.get("Text", "")[:100],
-                        url=topic.get("FirstURL", ""),
-                        snippet=topic.get("Text", ""),
-                        score=0.8,
+                        title=item.get("title", ""),
+                        url=item.get("href", item.get("link", "")),
+                        snippet=item.get("body", item.get("snippet", "")),
+                        score=score,
                         source="duckduckgo",
                     )
                 )
+            except Exception:
+                # Skip invalid results
+                continue
 
         return results
 

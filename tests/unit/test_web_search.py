@@ -476,34 +476,34 @@ class TestDuckDuckGoProvider:
 
     @pytest.mark.asyncio
     async def test_search_success(self, provider):
-        """Test successful search."""
+        """Test successful search using ddgs package."""
         input = WebSearchInput(query="test query")
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "Abstract": "Test abstract content",
-            "AbstractURL": "https://example.com/abstract",
-            "Heading": "Test Topic",
-            "RelatedTopics": [
-                {
-                    "Text": "Related topic 1 description",
-                    "FirstURL": "https://example.com/1",
-                },
-                {
-                    "Text": "Related topic 2 description",
-                    "FirstURL": "https://example.com/2",
-                },
-            ],
-        }
-        mock_response.raise_for_status = MagicMock()
+        # Mock the DDGS class from ddgs package
+        mock_ddgs_results = [
+            {
+                "title": "Test Result 1",
+                "href": "https://example.com/1",
+                "body": "This is the first test result snippet",
+            },
+            {
+                "title": "Test Result 2",
+                "href": "https://example.com/2",
+                "body": "This is the second test result snippet",
+            },
+        ]
 
-        with patch.object(provider.client, "get", new=AsyncMock(return_value=mock_response)):
+        with patch("ddgs.DDGS") as mock_ddgs_class:
+            mock_ddgs_instance = MagicMock()
+            mock_ddgs_instance.text.return_value = mock_ddgs_results
+            mock_ddgs_class.return_value = mock_ddgs_instance
+
             results = await provider.search(input)
 
-            # Should have abstract + 2 related topics
-            assert len(results) >= 1
+            assert len(results) == 2
             assert results[0].source == "duckduckgo"
-            assert any("Test abstract" in r.snippet for r in results)
+            assert results[0].title == "Test Result 1"
+            assert "first test result" in results[0].snippet
 
         await provider.close()
 
