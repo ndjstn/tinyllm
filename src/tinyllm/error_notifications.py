@@ -598,7 +598,7 @@ class NotificationManager:
             channel_config: Optional base channel configuration.
         """
         if channel_config is None:
-            channel_config = NotificationConfig(channel=NotificationChannel.WEBHOOK)
+            channel_config = NotificationConfig(channel=NotificationChannelType.WEBHOOK)
 
         channel = WebhookNotificationChannel(channel_config, webhook_config)
         self.channels.append(channel)

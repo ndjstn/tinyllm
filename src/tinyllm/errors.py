@@ -15,6 +15,7 @@ import random
 import sys
 import time
 import traceback
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime

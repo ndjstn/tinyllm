@@ -4,7 +4,7 @@ This module provides integration with service meshes like Istio and Linkerd
 for distributed tracing, header propagation, and traffic management.
 """
 
-from contextmanager import contextmanager
+from contextlib import contextmanager
 from typing import Any, Optional
 
 from tinyllm.logging import get_logger
