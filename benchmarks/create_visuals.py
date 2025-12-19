@@ -69,8 +69,39 @@ def style_axis(ax, title, xlabel='', ylabel=''):
     ax.grid(True, alpha=0.3, color=COLORS['grid'], linestyle='--')
 
 
+def get_live_stats():
+    """Get live stats from test results files."""
+    stats = {
+        'tests': '267',
+        'pass_rate': '100%',
+        'adversarial': '52%',
+        'queries': '27',
+    }
+
+    # Try to load adversarial results
+    adversarial_file = Path('benchmarks/results/adversarial_test.json')
+    if adversarial_file.exists():
+        with open(adversarial_file) as f:
+            data = json.load(f)
+            stats['adversarial'] = f"{data['summary']['pass_rate']:.0f}%"
+            stats['queries'] = str(data['summary']['total'])
+
+    # Try to load stress test results
+    stress_file = Path('benchmarks/results/stress_test.json')
+    if stress_file.exists():
+        with open(stress_file) as f:
+            data = json.load(f)
+            extreme_latency = data['analysis']['by_difficulty'].get('extreme', {}).get('avg_latency', 12000)
+            stats['extreme_time'] = f"<{int(extreme_latency/1000)+1}s"
+
+    return stats
+
+
 def create_hero_banner():
-    """Create a stunning hero image for the README."""
+    """Create a stunning hero image for the README with live stats."""
+    # Get live stats from results
+    live_stats = get_live_stats()
+
     fig, ax = plt.subplots(figsize=(14, 5), facecolor=COLORS['bg_dark'])
     ax.set_facecolor(COLORS['bg_dark'])
     ax.set_xlim(0, 100)
@@ -97,9 +128,14 @@ def create_hero_banner():
             fontsize=18, color=COLORS['text_muted'], ha='center', va='center',
             fontfamily='sans-serif', style='italic')
 
-    # Stats bar
-    stats = ['267 Tests', '100% Pass', '24 Queries', '<12s Extreme']
-    colors = [COLORS['success'], COLORS['primary'], COLORS['accent4'], COLORS['accent2']]
+    # Stats bar - now using live data
+    stats = [
+        f"{live_stats['tests']} Tests",
+        f"{live_stats['adversarial']} Adversarial",
+        f"{live_stats['queries']} Queries",
+        live_stats.get('extreme_time', '<12s Extreme')
+    ]
+    colors = [COLORS['success'], COLORS['warning'], COLORS['accent4'], COLORS['accent2']]
     for i, (stat, color) in enumerate(zip(stats, colors)):
         x = 20 + i * 20
         ax.text(x, 8, stat, fontsize=14, fontweight='bold',
