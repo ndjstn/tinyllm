@@ -2,7 +2,7 @@
 
 import time
 from threading import Thread
-from typing import Generator
+from typing import Any, Dict, Generator
 
 import pytest
 from prometheus_client import REGISTRY
@@ -12,6 +12,28 @@ from tinyllm.metrics import (
     get_metrics_collector,
     start_metrics_server,
 )
+
+
+def get_label_value(labels: Dict[Any, Any], key: str) -> Any:
+    """Extract label value, handling both string and enum keys.
+
+    Args:
+        labels: Labels dictionary from a metric sample.
+        key: Label key to look up (as string).
+
+    Returns:
+        Label value or None if not found.
+    """
+    # Try direct string lookup
+    if key in labels:
+        return labels[key]
+
+    # Try enum lookup - convert all keys to strings and search
+    for label_key, label_value in labels.items():
+        if str(label_key) == key or (hasattr(label_key, 'value') and label_key.value == key):
+            return label_value
+
+    return None
 
 
 @pytest.fixture
@@ -46,14 +68,14 @@ class TestMetricsCollector:
         # Check that metric was recorded with value >= 1
         found = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_requests_total":
+            if metric.name == "tinyllm_requests":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "test_model":
+                    if get_label_value(sample.labels, "model") == "test_model":
                         assert sample.value >= 1
                         found = True
                         break
 
-        assert found, "Metric tinyllm_requests_total with model=test_model not found"
+        assert found, "Metric tinyllm_requests with model=test_model not found"
 
     def test_track_request_latency(self, metrics_collector: MetricsCollector) -> None:
         """Test request latency tracking."""
@@ -69,7 +91,7 @@ class TestMetricsCollector:
             if metric.name == "tinyllm_request_latency_seconds":
                 for sample in metric.samples:
                     if (
-                        sample.labels.get("model") == "test_model"
+                        get_label_value(sample.labels, "model") == "test_model"
                         and "_count" in sample.name
                         and sample.value > 0
                     ):
@@ -96,7 +118,7 @@ class TestMetricsCollector:
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_active_requests":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "gauge_test":
+                    if get_label_value(sample.labels, "model") == "gauge_test":
                         active_count = sample.value
                         break
 
@@ -116,13 +138,13 @@ class TestMetricsCollector:
         output_recorded = False
 
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_tokens_input_total":
+            if metric.name == "tinyllm_tokens_input":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "token_test" and sample.value >= 100:
+                    if get_label_value(sample.labels, "model") == "token_test" and sample.value >= 100:
                         input_recorded = True
-            elif metric.name == "tinyllm_tokens_output_total":
+            elif metric.name == "tinyllm_tokens_output":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "token_test" and sample.value >= 50:
+                    if get_label_value(sample.labels, "model") == "token_test" and sample.value >= 50:
                         output_recorded = True
 
         assert input_recorded, "Input tokens not recorded"
@@ -137,11 +159,11 @@ class TestMetricsCollector:
         # Check error was recorded
         error_recorded = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_errors_total":
+            if metric.name == "tinyllm_errors":
                 for sample in metric.samples:
                     if (
-                        sample.labels.get("error_type") == "timeout"
-                        and sample.labels.get("model") == "error_test"
+                        get_label_value(sample.labels, "error_type") == "timeout"
+                        and get_label_value(sample.labels, "model") == "error_test"
                         and sample.value >= 1
                     ):
                         error_recorded = True
@@ -164,7 +186,7 @@ class TestMetricsCollector:
             for metric in REGISTRY.collect():
                 if metric.name == "tinyllm_circuit_breaker_state":
                     for sample in metric.samples:
-                        if sample.labels.get("model") == "breaker_test":
+                        if get_label_value(sample.labels, "model") == "breaker_test":
                             current_value = sample.value
                             break
 
@@ -178,9 +200,9 @@ class TestMetricsCollector:
 
         found = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_circuit_breaker_failures_total":
+            if metric.name == "tinyllm_circuit_breaker_failures":
                 for sample in metric.samples:
-                    if sample.labels.get("model") == "failure_test" and sample.value >= 1:
+                    if get_label_value(sample.labels, "model") == "failure_test" and sample.value >= 1:
                         found = True
                         break
 
@@ -197,7 +219,7 @@ class TestMetricsCollector:
             if metric.name == "tinyllm_model_load_duration_seconds":
                 for sample in metric.samples:
                     if (
-                        sample.labels.get("model") == "load_test"
+                        get_label_value(sample.labels, "model") == "load_test"
                         and "_count" in sample.name
                         and sample.value > 0
                     ):
@@ -214,9 +236,9 @@ class TestMetricsCollector:
         # Check node execution was recorded
         exec_recorded = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_node_executions_total":
+            if metric.name == "tinyllm_node_executions":
                 for sample in metric.samples:
-                    if sample.labels.get("node") == "test_node" and sample.value >= 1:
+                    if get_label_value(sample.labels, "node") == "test_node" and sample.value >= 1:
                         exec_recorded = True
                         break
 
@@ -230,11 +252,11 @@ class TestMetricsCollector:
 
         error_recorded = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_node_errors_total":
+            if metric.name == "tinyllm_node_errors":
                 for sample in metric.samples:
                     if (
-                        sample.labels.get("node") == "error_node"
-                        and sample.labels.get("error_type") == "validation"
+                        get_label_value(sample.labels, "node") == "error_node"
+                        and get_label_value(sample.labels, "error_type") == "validation"
                         and sample.value >= 1
                     ):
                         error_recorded = True
@@ -251,9 +273,9 @@ class TestMetricsCollector:
 
         exec_recorded = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_graph_executions_total":
+            if metric.name == "tinyllm_graph_executions":
                 for sample in metric.samples:
-                    if sample.labels.get("graph") == "test_graph" and sample.value >= 1:
+                    if get_label_value(sample.labels, "graph") == "test_graph" and sample.value >= 1:
                         exec_recorded = True
                         break
 
@@ -268,13 +290,13 @@ class TestMetricsCollector:
         misses_recorded = False
 
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_cache_hits_total":
+            if metric.name == "tinyllm_cache_hits":
                 for sample in metric.samples:
-                    if sample.labels.get("cache_type") == "memory" and sample.value >= 1:
+                    if get_label_value(sample.labels, "cache_type") == "memory" and sample.value >= 1:
                         hits_recorded = True
-            elif metric.name == "tinyllm_cache_misses_total":
+            elif metric.name == "tinyllm_cache_misses":
                 for sample in metric.samples:
-                    if sample.labels.get("cache_type") == "memory" and sample.value >= 1:
+                    if get_label_value(sample.labels, "cache_type") == "memory" and sample.value >= 1:
                         misses_recorded = True
 
         assert hits_recorded, "Cache hits not recorded"
@@ -289,7 +311,7 @@ class TestMetricsCollector:
             if metric.name == "tinyllm_rate_limit_wait_seconds":
                 for sample in metric.samples:
                     if (
-                        sample.labels.get("model") == "wait_test"
+                        get_label_value(sample.labels, "model") == "wait_test"
                         and "_count" in sample.name
                     ):
                         wait_recorded = True
@@ -304,9 +326,9 @@ class TestMetricsCollector:
 
         ops_recorded = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_memory_operations_total":
+            if metric.name == "tinyllm_memory_operations":
                 for sample in metric.samples:
-                    if sample.labels.get("operation_type") in ["add", "get"] and sample.value >= 1:
+                    if get_label_value(sample.labels, "operation_type") in ["add", "get"] and sample.value >= 1:
                         ops_recorded = True
                         break
 
@@ -348,10 +370,10 @@ class TestMetricsServer:
             content = response.read().decode("utf-8")
 
             # Check for expected metric names
-            assert "tinyllm_requests_total" in content
+            assert "tinyllm_requests" in content
             assert "tinyllm_request_latency_seconds" in content
-            assert "tinyllm_tokens_input_total" in content
-            assert "tinyllm_tokens_output_total" in content
+            assert "tinyllm_tokens_input" in content
+            assert "tinyllm_tokens_output" in content
             assert "tinyllm_system_info" in content
 
         except Exception as e:
@@ -394,13 +416,13 @@ class TestMetricsIntegration:
         node_recorded = False
 
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_graph_executions_total":
+            if metric.name == "tinyllm_graph_executions":
                 for sample in metric.samples:
-                    if sample.labels.get("graph") == "outer" and sample.value >= 1:
+                    if get_label_value(sample.labels, "graph") == "outer" and sample.value >= 1:
                         graph_recorded = True
-            elif metric.name == "tinyllm_node_executions_total":
+            elif metric.name == "tinyllm_node_executions":
                 for sample in metric.samples:
-                    if sample.labels.get("node") == "inner" and sample.value >= 1:
+                    if get_label_value(sample.labels, "node") == "inner" and sample.value >= 1:
                         node_recorded = True
 
         assert graph_recorded, "Graph execution not recorded"
@@ -414,13 +436,13 @@ class TestMetricsIntegration:
 
         found_metric = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_requests_total":
+            if metric.name == "tinyllm_requests":
                 for sample in metric.samples:
                     labels = sample.labels
                     if (
-                        labels.get("model") == "qwen2.5:0.5b"
-                        and labels.get("graph") == "multi_domain"
-                        and labels.get("request_type") == "generate"
+                        get_label_value(labels, "model") == "qwen2.5:0.5b"
+                        and get_label_value(labels, "graph") == "multi_domain"
+                        and get_label_value(labels, "request_type") == "generate"
                         and sample.value >= 1
                     ):
                         found_metric = True

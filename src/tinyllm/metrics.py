@@ -793,6 +793,60 @@ class MetricsCollector:
         """
         self.queue_active_workers.set(count)
 
+    # Error recovery metrics
+
+    def increment_error(self, error_code: str) -> None:
+        """Increment error counter by error code.
+
+        Args:
+            error_code: Error code from exception.
+        """
+        self.errors_total.labels(
+            error_type=error_code, model="unknown", graph="unknown"
+        ).inc()
+
+    def increment_retry_attempt(self) -> None:
+        """Increment retry attempt counter."""
+        # Track via request type
+        self.request_total.labels(
+            model="unknown", graph="unknown", request_type="retry_attempt"
+        ).inc()
+
+    def increment_retry_success(self) -> None:
+        """Increment successful retry counter."""
+        self.request_total.labels(
+            model="unknown", graph="unknown", request_type="retry_success"
+        ).inc()
+
+    def increment_retry_exhausted(self) -> None:
+        """Increment retry exhausted counter."""
+        self.request_total.labels(
+            model="unknown", graph="unknown", request_type="retry_exhausted"
+        ).inc()
+
+    def increment_dlq_message(self) -> None:
+        """Increment dead letter queue message counter."""
+        self.request_total.labels(
+            model="unknown", graph="unknown", request_type="dlq_message"
+        ).inc()
+
+    def record_circuit_state_change(self, circuit_name: str, new_state: str) -> None:
+        """Record circuit breaker state change.
+
+        Args:
+            circuit_name: Name of the circuit breaker.
+            new_state: New state (closed, half_open, open).
+        """
+        # Map state to numeric value
+        state_values = {
+            "closed": 0,
+            "half_open": 1,
+            "open": 2,
+        }
+        self.circuit_breaker_state.labels(model=circuit_name).set(
+            state_values.get(new_state, 0)
+        )
+
     # Utility methods
 
     def get_cardinality_stats(self) -> Dict[str, Any]:

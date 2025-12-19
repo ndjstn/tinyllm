@@ -1,479 +1,1132 @@
-"""Enhanced error handling for TinyLLM.
+"""Error handling and recovery system for TinyLLM.
 
-This module provides rich error classes with context enrichment,
-including stack traces, execution state, and input capture.
+Provides:
+- Custom exception hierarchy for structured error handling
+- Dead letter queue for failed messages
+- Automatic retry with jitter for transient failures
+- Error classification system (retryable vs fatal)
+- Circuit breaker with state persistence across restarts
+- Global exception handler decorator
 """
 
+import asyncio
+import json
+import random
 import sys
+import time
 import traceback
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from functools import wraps
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
 
+import aiosqlite
 from pydantic import BaseModel, Field
 
+from tinyllm.logging import get_logger
+from tinyllm.metrics import get_metrics_collector
 
-class ErrorSeverity(str, Enum):
-    """Error severity levels."""
+logger = get_logger(__name__, component="errors")
+metrics = get_metrics_collector()
 
-    DEBUG = "debug"
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-    CRITICAL = "critical"
-    FATAL = "fatal"
+T = TypeVar("T")
 
 
-class ErrorCategory(str, Enum):
-    """Error categories for classification."""
-
-    VALIDATION = "validation"
-    EXECUTION = "execution"
-    TIMEOUT = "timeout"
-    RESOURCE = "resource"
-    NETWORK = "network"
-    MODEL = "model"
-    CONFIGURATION = "configuration"
-    AUTHENTICATION = "authentication"
-    PERMISSION = "permission"
-    DATA = "data"
-    INTERNAL = "internal"
-    UNKNOWN = "unknown"
-
-
-class ErrorContext(BaseModel):
-    """Rich context information for errors.
-
-    Captures execution state, stack traces, and input data
-    to aid in debugging and error analysis.
-    """
-
-    model_config = {"extra": "forbid"}
-
-    # Timing
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When error occurred"
-    )
-
-    # Stack information
-    stack_trace: str = Field(description="Full stack trace")
-    exception_type: str = Field(description="Exception class name")
-    exception_message: str = Field(description="Exception message")
-
-    # Execution context
-    trace_id: Optional[str] = Field(
-        default=None, description="Trace ID if available"
-    )
-    node_id: Optional[str] = Field(
-        default=None, description="Node ID where error occurred"
-    )
-    graph_id: Optional[str] = Field(
-        default=None, description="Graph ID being executed"
-    )
-    execution_step: Optional[int] = Field(
-        default=None, description="Step number in execution"
-    )
-
-    # State capture
-    context_variables: Dict[str, Any] = Field(
-        default_factory=dict, description="Execution context variables"
-    )
-    node_config: Dict[str, Any] = Field(
-        default_factory=dict, description="Node configuration"
-    )
-    visited_nodes: List[str] = Field(
-        default_factory=list, description="Nodes visited before error"
-    )
-
-    # Input capture
-    input_message: Optional[Dict[str, Any]] = Field(
-        default=None, description="Input message that caused error"
-    )
-    input_payload: Optional[Dict[str, Any]] = Field(
-        default=None, description="Payload data"
-    )
-
-    # Additional context
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
-
-    # System information
-    python_version: str = Field(
-        default_factory=lambda: sys.version.split()[0],
-        description="Python version"
-    )
-    process_id: int = Field(
-        default_factory=lambda: sys.getpid(),
-        description="Process ID"
-    )
-
-
-class EnrichedError(BaseModel):
-    """Error with enriched context.
-
-    Provides comprehensive error information including
-    categorization, severity, and full context.
-    """
-
-    model_config = {"extra": "forbid"}
-
-    # Core error information
-    error_id: str = Field(description="Unique error identifier")
-    category: ErrorCategory = Field(description="Error category")
-    severity: ErrorSeverity = Field(description="Error severity")
-    message: str = Field(description="Human-readable error message")
-
-    # Context
-    context: ErrorContext = Field(description="Rich error context")
-
-    # Classification
-    is_retryable: bool = Field(
-        default=False, description="Whether error is retryable"
-    )
-    is_transient: bool = Field(
-        default=False, description="Whether error is likely transient"
-    )
-    is_user_error: bool = Field(
-        default=False, description="Whether caused by user input"
-    )
-
-    # Recovery suggestions
-    suggested_actions: List[str] = Field(
-        default_factory=list, description="Suggested recovery actions"
-    )
-    recovery_strategies: List[str] = Field(
-        default_factory=list, description="Possible recovery strategies"
-    )
-
-    # Related errors
-    caused_by: Optional[str] = Field(
-        default=None, description="ID of error that caused this one"
-    )
-    related_errors: List[str] = Field(
-        default_factory=list, description="IDs of related errors"
-    )
-
-    # Impact
-    affected_components: List[str] = Field(
-        default_factory=list, description="Components affected by this error"
-    )
-
-    # Metrics
-    occurrence_count: int = Field(
-        default=1, ge=1, description="Number of times this error occurred"
-    )
-    first_seen: datetime = Field(
-        default_factory=datetime.utcnow, description="First occurrence"
-    )
-    last_seen: datetime = Field(
-        default_factory=datetime.utcnow, description="Last occurrence"
-    )
+# ============================================================================
+# Exception Hierarchy
+# ============================================================================
 
 
 class TinyLLMError(Exception):
-    """Base exception for TinyLLM with context enrichment.
-
-    All TinyLLM exceptions should inherit from this class
-    to benefit from automatic context capture and enrichment.
-    """
+    """Base exception for all TinyLLM errors."""
 
     def __init__(
         self,
         message: str,
-        category: ErrorCategory = ErrorCategory.INTERNAL,
-        severity: ErrorSeverity = ErrorSeverity.ERROR,
-        trace_id: Optional[str] = None,
-        node_id: Optional[str] = None,
-        graph_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        code: str = "UNKNOWN",
+        details: Optional[Dict[str, Any]] = None,
+        recoverable: bool = False,
     ):
-        """Initialize error with context.
-
-        Args:
-            message: Error message.
-            category: Error category.
-            severity: Error severity.
-            trace_id: Optional trace ID.
-            node_id: Optional node ID.
-            graph_id: Optional graph ID.
-            metadata: Additional metadata.
-        """
         super().__init__(message)
         self.message = message
-        self.category = category
-        self.severity = severity
-        self.trace_id = trace_id
-        self.node_id = node_id
-        self.graph_id = graph_id
-        self.metadata = metadata or {}
+        self.code = code
+        self.details = details or {}
+        self.recoverable = recoverable
+        self.timestamp = datetime.utcnow()
 
         # Capture stack trace
-        self._capture_stack()
-
-    def _capture_stack(self) -> None:
-        """Capture stack trace at error creation."""
         self.stack_trace = "".join(traceback.format_exception(*sys.exc_info()))
         if self.stack_trace.strip() == "":
-            # If no exception in flight, capture current stack
             self.stack_trace = "".join(traceback.format_stack())
 
-    def to_enriched_error(
-        self,
-        error_id: str,
-        context_variables: Optional[Dict[str, Any]] = None,
-        node_config: Optional[Dict[str, Any]] = None,
-        visited_nodes: Optional[List[str]] = None,
-        input_message: Optional[Dict[str, Any]] = None,
-        input_payload: Optional[Dict[str, Any]] = None,
-        execution_step: Optional[int] = None,
-    ) -> EnrichedError:
-        """Convert to enriched error with full context.
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "type": self.__class__.__name__,
+            "message": self.message,
+            "code": self.code,
+            "details": self.details,
+            "recoverable": self.recoverable,
+            "timestamp": self.timestamp.isoformat(),
+            "stack_trace": self.stack_trace,
+        }
+
+
+class RetryableError(TinyLLMError):
+    """Errors that can be retried (transient failures)."""
+
+    def __init__(self, message: str, code: str = "RETRYABLE", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code=code, details=details, recoverable=True)
+
+
+class FatalError(TinyLLMError):
+    """Errors that cannot be retried (permanent failures)."""
+
+    def __init__(self, message: str, code: str = "FATAL", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code=code, details=details, recoverable=False)
+
+
+class ValidationError(FatalError):
+    """Input validation errors."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code="VALIDATION_ERROR", details=details)
+
+
+class ModelError(RetryableError):
+    """Model execution errors (usually retryable)."""
+
+    def __init__(self, message: str, model: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
+        details = details or {}
+        if model:
+            details["model"] = model
+        super().__init__(message, code="MODEL_ERROR", details=details)
+
+
+class TimeoutError(RetryableError):
+    """Operation timeout errors."""
+
+    def __init__(self, message: str, timeout_ms: Optional[int] = None, details: Optional[Dict[str, Any]] = None):
+        details = details or {}
+        if timeout_ms:
+            details["timeout_ms"] = timeout_ms
+        super().__init__(message, code="TIMEOUT_ERROR", details=details)
+
+
+class RateLimitError(RetryableError):
+    """Rate limit exceeded errors."""
+
+    def __init__(self, message: str, retry_after_ms: Optional[int] = None, details: Optional[Dict[str, Any]] = None):
+        details = details or {}
+        if retry_after_ms:
+            details["retry_after_ms"] = retry_after_ms
+        super().__init__(message, code="RATE_LIMIT_ERROR", details=details)
+
+
+class CircuitOpenError(RetryableError):
+    """Circuit breaker is open."""
+
+    def __init__(self, message: str, service: str, details: Optional[Dict[str, Any]] = None):
+        details = details or {}
+        details["service"] = service
+        super().__init__(message, code="CIRCUIT_OPEN", details=details)
+
+
+class ResourceExhaustedError(RetryableError):
+    """Resource exhaustion errors (memory, connections, etc)."""
+
+    def __init__(self, message: str, resource: Optional[str] = None, details: Optional[Dict[str, Any]] = None):
+        details = details or {}
+        if resource:
+            details["resource"] = resource
+        super().__init__(message, code="RESOURCE_EXHAUSTED", details=details)
+
+
+class NetworkError(RetryableError):
+    """Network connectivity errors."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code="NETWORK_ERROR", details=details)
+
+
+class ExecutionError(FatalError):
+    """Execution errors."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code="EXECUTION_ERROR", details=details)
+
+
+class ConfigurationError(FatalError):
+    """Configuration errors."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, code="CONFIGURATION_ERROR", details=details)
+
+
+# ============================================================================
+# Error Classification
+# ============================================================================
+
+
+class ErrorClassifier:
+    """Classifies errors as retryable or fatal."""
+
+    # Patterns that indicate retryable errors
+    RETRYABLE_PATTERNS = [
+        "timeout",
+        "connection",
+        "rate limit",
+        "too many requests",
+        "service unavailable",
+        "temporarily unavailable",
+        "503",
+        "504",
+        "429",
+        "network",
+        "socket",
+        "circuit",
+        "resource",
+    ]
+
+    # Patterns that indicate fatal errors
+    FATAL_PATTERNS = [
+        "validation",
+        "invalid",
+        "malformed",
+        "unauthorized",
+        "forbidden",
+        "not found",
+        "400",
+        "401",
+        "403",
+        "404",
+        "permission",
+        "configuration",
+    ]
+
+    @classmethod
+    def classify(cls, error: Exception) -> bool:
+        """Classify if an error is retryable.
 
         Args:
-            error_id: Unique error identifier.
-            context_variables: Execution context variables.
-            node_config: Node configuration.
-            visited_nodes: Nodes visited before error.
-            input_message: Input message.
-            input_payload: Input payload.
-            execution_step: Execution step number.
+            error: Exception to classify.
 
         Returns:
-            EnrichedError with full context.
+            True if retryable, False if fatal.
         """
-        context = ErrorContext(
-            timestamp=datetime.utcnow(),
-            stack_trace=self.stack_trace,
-            exception_type=self.__class__.__name__,
-            exception_message=self.message,
-            trace_id=self.trace_id,
-            node_id=self.node_id,
-            graph_id=self.graph_id,
-            execution_step=execution_step,
-            context_variables=context_variables or {},
-            node_config=node_config or {},
-            visited_nodes=visited_nodes or [],
-            input_message=input_message,
-            input_payload=input_payload,
-            metadata=self.metadata,
-        )
+        # Check if it's a TinyLLM error with explicit classification
+        if isinstance(error, TinyLLMError):
+            return error.recoverable
 
-        return EnrichedError(
-            error_id=error_id,
-            category=self.category,
-            severity=self.severity,
-            message=self.message,
-            context=context,
-            is_retryable=self._is_retryable(),
-            is_transient=self._is_transient(),
-            is_user_error=self._is_user_error(),
-            suggested_actions=self._get_suggested_actions(),
-            recovery_strategies=self._get_recovery_strategies(),
-            affected_components=self._get_affected_components(),
-        )
+        # Check error message against patterns
+        error_str = str(error).lower()
 
-    def _is_retryable(self) -> bool:
-        """Determine if error is retryable.
+        # Check fatal patterns first (more specific)
+        for pattern in cls.FATAL_PATTERNS:
+            if pattern in error_str:
+                logger.debug("error_classified_fatal", error=error_str, pattern=pattern)
+                return False
 
-        Returns:
-            True if error might succeed on retry.
+        # Check retryable patterns
+        for pattern in cls.RETRYABLE_PATTERNS:
+            if pattern in error_str:
+                logger.debug("error_classified_retryable", error=error_str, pattern=pattern)
+                return True
+
+        # Default to non-retryable for safety
+        logger.warning("error_classification_unknown", error=error_str)
+        return False
+
+
+# ============================================================================
+# Retry with Jitter
+# ============================================================================
+
+
+class RetryConfig(BaseModel):
+    """Configuration for retry behavior."""
+
+    max_attempts: int = Field(default=3, ge=1, description="Maximum retry attempts")
+    base_delay_ms: int = Field(default=1000, ge=0, description="Base delay in milliseconds")
+    max_delay_ms: int = Field(default=60000, ge=0, description="Maximum delay in milliseconds")
+    exponential_base: float = Field(default=2.0, ge=1.0, description="Exponential backoff base")
+    jitter: bool = Field(default=True, description="Add random jitter to delays")
+    jitter_ratio: float = Field(default=0.1, ge=0.0, le=1.0, description="Jitter ratio (0-1)")
+
+
+def calculate_delay(attempt: int, config: RetryConfig) -> float:
+    """Calculate retry delay with exponential backoff and jitter.
+
+    Args:
+        attempt: Current attempt number (0-indexed).
+        config: Retry configuration.
+
+    Returns:
+        Delay in seconds.
+    """
+    # Exponential backoff
+    delay_ms = min(
+        config.base_delay_ms * (config.exponential_base ** attempt),
+        config.max_delay_ms,
+    )
+
+    # Add jitter
+    if config.jitter:
+        jitter_amount = delay_ms * config.jitter_ratio
+        delay_ms += random.uniform(-jitter_amount, jitter_amount)
+
+    return max(0, delay_ms) / 1000.0  # Convert to seconds
+
+
+def with_retry(config: Optional[RetryConfig] = None):
+    """Decorator to add retry logic with exponential backoff and jitter.
+
+    Args:
+        config: Retry configuration (uses defaults if None).
+
+    Example:
+        @with_retry(RetryConfig(max_attempts=5))
+        async def make_api_call():
+            ...
+    """
+    retry_config = config or RetryConfig()
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs) -> T:
+            last_error = None
+
+            for attempt in range(retry_config.max_attempts):
+                try:
+                    result = await func(*args, **kwargs)
+
+                    if attempt > 0:
+                        logger.info(
+                            "retry_succeeded",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            total_attempts=retry_config.max_attempts,
+                        )
+                        metrics.increment_retry_success()
+
+                    return result
+
+                except Exception as e:
+                    last_error = e
+                    is_retryable = ErrorClassifier.classify(e)
+
+                    if not is_retryable or attempt == retry_config.max_attempts - 1:
+                        logger.error(
+                            "retry_exhausted",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            error=str(e),
+                            retryable=is_retryable,
+                        )
+                        metrics.increment_retry_exhausted()
+                        raise
+
+                    delay = calculate_delay(attempt, retry_config)
+                    logger.warning(
+                        "retry_attempt",
+                        function=func.__name__,
+                        attempt=attempt + 1,
+                        max_attempts=retry_config.max_attempts,
+                        delay_s=delay,
+                        error=str(e),
+                    )
+                    metrics.increment_retry_attempt()
+
+                    await asyncio.sleep(delay)
+
+            # Should never reach here, but just in case
+            raise last_error or RuntimeError("Retry logic failed unexpectedly")
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs) -> T:
+            last_error = None
+
+            for attempt in range(retry_config.max_attempts):
+                try:
+                    result = func(*args, **kwargs)
+
+                    if attempt > 0:
+                        logger.info(
+                            "retry_succeeded",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            total_attempts=retry_config.max_attempts,
+                        )
+                        metrics.increment_retry_success()
+
+                    return result
+
+                except Exception as e:
+                    last_error = e
+                    is_retryable = ErrorClassifier.classify(e)
+
+                    if not is_retryable or attempt == retry_config.max_attempts - 1:
+                        logger.error(
+                            "retry_exhausted",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            error=str(e),
+                            retryable=is_retryable,
+                        )
+                        metrics.increment_retry_exhausted()
+                        raise
+
+                    delay = calculate_delay(attempt, retry_config)
+                    logger.warning(
+                        "retry_attempt",
+                        function=func.__name__,
+                        attempt=attempt + 1,
+                        max_attempts=retry_config.max_attempts,
+                        delay_s=delay,
+                        error=str(e),
+                    )
+                    metrics.increment_retry_attempt()
+
+                    time.sleep(delay)
+
+            raise last_error or RuntimeError("Retry logic failed unexpectedly")
+
+        # Return appropriate wrapper based on function type
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+
+    return decorator
+
+
+# ============================================================================
+# Dead Letter Queue
+# ============================================================================
+
+
+class DLQMessage(BaseModel):
+    """Message stored in dead letter queue."""
+
+    id: str = Field(description="Unique message ID")
+    trace_id: str = Field(description="Trace ID for correlation")
+    payload: Dict[str, Any] = Field(description="Original message payload")
+    error_type: str = Field(description="Type of error")
+    error_message: str = Field(description="Error message")
+    error_details: Dict[str, Any] = Field(default_factory=dict, description="Error details")
+    attempts: int = Field(description="Number of attempts made")
+    first_failed_at: datetime = Field(description="First failure timestamp")
+    last_failed_at: datetime = Field(description="Last failure timestamp")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+
+class DeadLetterQueue:
+    """Dead letter queue for failed messages using SQLite.
+
+    Stores failed messages for later inspection, retry, or manual intervention.
+    """
+
+    def __init__(self, db_path: Optional[Path] = None):
+        """Initialize dead letter queue.
+
+        Args:
+            db_path: Path to SQLite database (uses default if None).
         """
-        return self.category in {
-            ErrorCategory.TIMEOUT,
-            ErrorCategory.NETWORK,
-            ErrorCategory.RESOURCE,
+        if db_path:
+            self.db_path = db_path
+        else:
+            base_path = Path.home() / ".tinyllm" / "data"
+            base_path.mkdir(parents=True, exist_ok=True)
+            self.db_path = base_path / "dlq.db"
+
+        self._db: Optional[aiosqlite.Connection] = None
+        self._initialized = False
+        self._lock = asyncio.Lock()
+
+    async def initialize(self) -> None:
+        """Initialize the database and create tables."""
+        if self._initialized:
+            return
+
+        async with self._lock:
+            if self._initialized:
+                return
+
+            self._db = await aiosqlite.connect(str(self.db_path))
+            await self._db.execute("PRAGMA journal_mode=WAL")
+
+            await self._db.execute("""
+                CREATE TABLE IF NOT EXISTS dlq_messages (
+                    id TEXT PRIMARY KEY,
+                    trace_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    error_type TEXT NOT NULL,
+                    error_message TEXT NOT NULL,
+                    error_details TEXT DEFAULT '{}',
+                    attempts INTEGER NOT NULL,
+                    first_failed_at TEXT NOT NULL,
+                    last_failed_at TEXT NOT NULL,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            await self._db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_trace_id
+                ON dlq_messages(trace_id)
+            """)
+
+            await self._db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_error_type
+                ON dlq_messages(error_type)
+            """)
+
+            await self._db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dlq_last_failed
+                ON dlq_messages(last_failed_at DESC)
+            """)
+
+            await self._db.commit()
+            self._initialized = True
+
+            logger.info("dlq_initialized", db_path=str(self.db_path))
+
+    async def close(self) -> None:
+        """Close the database connection."""
+        if self._db:
+            await self._db.close()
+            self._db = None
+        self._initialized = False
+
+    async def enqueue(
+        self,
+        message_id: str,
+        trace_id: str,
+        payload: Dict[str, Any],
+        error: Exception,
+        attempts: int = 1,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Add a failed message to the dead letter queue.
+
+        Args:
+            message_id: Unique message identifier.
+            trace_id: Trace ID for correlation.
+            payload: Original message payload.
+            error: The exception that caused the failure.
+            attempts: Number of attempts made.
+            metadata: Additional metadata.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        now = datetime.utcnow().isoformat()
+        error_dict = error.to_dict() if isinstance(error, TinyLLMError) else {
+            "type": type(error).__name__,
+            "message": str(error),
         }
 
-    def _is_transient(self) -> bool:
-        """Determine if error is transient.
+        async with self._lock:
+            await self._db.execute(
+                """
+                INSERT OR REPLACE INTO dlq_messages
+                (id, trace_id, payload, error_type, error_message, error_details,
+                 attempts, first_failed_at, last_failed_at, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    trace_id,
+                    json.dumps(payload),
+                    error_dict.get("type", "Unknown"),
+                    error_dict.get("message", str(error)),
+                    json.dumps(error_dict.get("details", {})),
+                    attempts,
+                    now,  # first_failed_at
+                    now,  # last_failed_at
+                    json.dumps(metadata or {}),
+                    now,
+                ),
+            )
+            await self._db.commit()
+
+        logger.warning(
+            "message_sent_to_dlq",
+            message_id=message_id,
+            trace_id=trace_id,
+            error_type=error_dict.get("type"),
+            attempts=attempts,
+        )
+        metrics.increment_dlq_message()
+
+    async def get(self, message_id: str) -> Optional[DLQMessage]:
+        """Retrieve a message from the DLQ by ID.
+
+        Args:
+            message_id: Message identifier.
 
         Returns:
-            True if error is likely temporary.
+            DLQMessage or None if not found.
         """
-        return self.category in {
-            ErrorCategory.TIMEOUT,
-            ErrorCategory.NETWORK,
-            ErrorCategory.RESOURCE,
-        }
+        if not self._initialized:
+            await self.initialize()
 
-    def _is_user_error(self) -> bool:
-        """Determine if error is caused by user.
+        self._db.row_factory = aiosqlite.Row
+        async with self._db.execute(
+            "SELECT * FROM dlq_messages WHERE id = ?", (message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return DLQMessage(
+                    id=row["id"],
+                    trace_id=row["trace_id"],
+                    payload=json.loads(row["payload"]),
+                    error_type=row["error_type"],
+                    error_message=row["error_message"],
+                    error_details=json.loads(row["error_details"]),
+                    attempts=row["attempts"],
+                    first_failed_at=datetime.fromisoformat(row["first_failed_at"]),
+                    last_failed_at=datetime.fromisoformat(row["last_failed_at"]),
+                    metadata=json.loads(row["metadata"]),
+                )
+        return None
+
+    async def list(
+        self,
+        limit: int = 100,
+        error_type: Optional[str] = None,
+    ) -> List[DLQMessage]:
+        """List messages in the DLQ.
+
+        Args:
+            limit: Maximum number of messages to return.
+            error_type: Filter by error type.
 
         Returns:
-            True if error is due to user input.
+            List of DLQ messages.
         """
-        return self.category in {
-            ErrorCategory.VALIDATION,
-            ErrorCategory.AUTHENTICATION,
-            ErrorCategory.PERMISSION,
-        }
+        if not self._initialized:
+            await self.initialize()
 
-    def _get_suggested_actions(self) -> List[str]:
-        """Get suggested recovery actions.
+        query = "SELECT * FROM dlq_messages WHERE 1=1"
+        params: List[Any] = []
+
+        if error_type:
+            query += " AND error_type = ?"
+            params.append(error_type)
+
+        query += " ORDER BY last_failed_at DESC LIMIT ?"
+        params.append(limit)
+
+        self._db.row_factory = aiosqlite.Row
+        async with self._db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [
+                DLQMessage(
+                    id=row["id"],
+                    trace_id=row["trace_id"],
+                    payload=json.loads(row["payload"]),
+                    error_type=row["error_type"],
+                    error_message=row["error_message"],
+                    error_details=json.loads(row["error_details"]),
+                    attempts=row["attempts"],
+                    first_failed_at=datetime.fromisoformat(row["first_failed_at"]),
+                    last_failed_at=datetime.fromisoformat(row["last_failed_at"]),
+                    metadata=json.loads(row["metadata"]),
+                )
+                for row in rows
+            ]
+
+    async def delete(self, message_id: str) -> bool:
+        """Delete a message from the DLQ.
+
+        Args:
+            message_id: Message identifier.
 
         Returns:
-            List of suggested actions.
+            True if deleted, False if not found.
         """
-        actions = []
+        if not self._initialized:
+            await self.initialize()
 
-        if self._is_retryable():
-            actions.append("Retry the operation")
+        async with self._lock:
+            cursor = await self._db.execute(
+                "DELETE FROM dlq_messages WHERE id = ?", (message_id,)
+            )
+            await self._db.commit()
+            return cursor.rowcount > 0
 
-        if self.category == ErrorCategory.TIMEOUT:
-            actions.extend([
-                "Increase timeout value",
-                "Check if operation is hanging",
-                "Review system resources",
-            ])
-        elif self.category == ErrorCategory.NETWORK:
-            actions.extend([
-                "Check network connectivity",
-                "Verify service availability",
-                "Review firewall settings",
-            ])
-        elif self.category == ErrorCategory.RESOURCE:
-            actions.extend([
-                "Check available memory",
-                "Review resource limits",
-                "Scale resources if needed",
-            ])
-        elif self.category == ErrorCategory.VALIDATION:
-            actions.extend([
-                "Check input format",
-                "Review validation rules",
-                "Verify input data",
-            ])
-        elif self.category == ErrorCategory.MODEL:
-            actions.extend([
-                "Verify model is loaded",
-                "Check model configuration",
-                "Review model compatibility",
-            ])
+    async def count(self, error_type: Optional[str] = None) -> int:
+        """Count messages in the DLQ.
 
-        return actions
-
-    def _get_recovery_strategies(self) -> List[str]:
-        """Get recovery strategies.
+        Args:
+            error_type: Filter by error type.
 
         Returns:
-            List of recovery strategies.
+            Number of messages.
         """
-        strategies = []
+        if not self._initialized:
+            await self.initialize()
 
-        if self._is_retryable():
-            strategies.append("exponential_backoff")
+        query = "SELECT COUNT(*) FROM dlq_messages WHERE 1=1"
+        params: List[Any] = []
 
-        if self.category == ErrorCategory.TIMEOUT:
-            strategies.extend(["increase_timeout", "fallback_node"])
-        elif self.category == ErrorCategory.NETWORK:
-            strategies.extend(["retry_with_backoff", "fallback_service"])
-        elif self.category == ErrorCategory.RESOURCE:
-            strategies.extend(["prune_memory", "scale_up"])
-        elif self.category == ErrorCategory.MODEL:
-            strategies.extend(["fallback_model", "reload_model"])
+        if error_type:
+            query += " AND error_type = ?"
+            params.append(error_type)
 
-        return strategies
+        async with self._db.execute(query, params) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
-    def _get_affected_components(self) -> List[str]:
-        """Get affected components.
+
+# ============================================================================
+# Circuit Breaker
+# ============================================================================
+
+
+class CircuitState(str, Enum):
+    """Circuit breaker states."""
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing if recovered
+
+
+class CircuitBreakerConfig(BaseModel):
+    """Configuration for circuit breaker."""
+
+    failure_threshold: int = Field(default=5, ge=1, description="Failures to open circuit")
+    success_threshold: int = Field(default=2, ge=1, description="Successes to close from half-open")
+    timeout_ms: int = Field(default=60000, ge=1000, description="Time before trying half-open")
+    half_open_max_calls: int = Field(default=3, ge=1, description="Max calls in half-open state")
+
+
+@dataclass
+class CircuitStats:
+    """Circuit breaker statistics."""
+
+    state: CircuitState = CircuitState.CLOSED
+    failure_count: int = 0
+    success_count: int = 0
+    last_failure_time: Optional[float] = None
+    last_state_change: float = field(default_factory=time.time)
+    total_calls: int = 0
+    total_failures: int = 0
+    total_successes: int = 0
+
+
+class CircuitBreaker:
+    """Circuit breaker with state persistence across restarts.
+
+    Protects services from cascading failures by temporarily blocking
+    requests when failure rate is high.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        config: Optional[CircuitBreakerConfig] = None,
+        db_path: Optional[Path] = None,
+    ):
+        """Initialize circuit breaker.
+
+        Args:
+            name: Unique name for this circuit.
+            config: Circuit breaker configuration.
+            db_path: Path to SQLite database for persistence.
+        """
+        self.name = name
+        self.config = config or CircuitBreakerConfig()
+
+        if db_path:
+            self.db_path = db_path
+        else:
+            base_path = Path.home() / ".tinyllm" / "data"
+            base_path.mkdir(parents=True, exist_ok=True)
+            self.db_path = base_path / "circuit_breaker.db"
+
+        self._db: Optional[aiosqlite.Connection] = None
+        self._stats = CircuitStats()
+        self._lock = asyncio.Lock()
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the database and load persisted state."""
+        if self._initialized:
+            return
+
+        async with self._lock:
+            if self._initialized:
+                return
+
+            self._db = await aiosqlite.connect(str(self.db_path))
+            await self._db.execute("PRAGMA journal_mode=WAL")
+
+            await self._db.execute("""
+                CREATE TABLE IF NOT EXISTS circuit_state (
+                    name TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    failure_count INTEGER DEFAULT 0,
+                    success_count INTEGER DEFAULT 0,
+                    last_failure_time REAL,
+                    last_state_change REAL NOT NULL,
+                    total_calls INTEGER DEFAULT 0,
+                    total_failures INTEGER DEFAULT 0,
+                    total_successes INTEGER DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            await self._db.commit()
+
+            # Load persisted state
+            await self._load_state()
+
+            self._initialized = True
+            logger.info(
+                "circuit_breaker_initialized",
+                name=self.name,
+                state=self._stats.state,
+            )
+
+    async def close(self) -> None:
+        """Close the database connection."""
+        if self._db:
+            await self._save_state()
+            await self._db.close()
+            self._db = None
+        self._initialized = False
+
+    async def _load_state(self) -> None:
+        """Load circuit state from database."""
+        self._db.row_factory = aiosqlite.Row
+        async with self._db.execute(
+            "SELECT * FROM circuit_state WHERE name = ?", (self.name,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                self._stats = CircuitStats(
+                    state=CircuitState(row["state"]),
+                    failure_count=row["failure_count"],
+                    success_count=row["success_count"],
+                    last_failure_time=row["last_failure_time"],
+                    last_state_change=row["last_state_change"],
+                    total_calls=row["total_calls"],
+                    total_failures=row["total_failures"],
+                    total_successes=row["total_successes"],
+                )
+                logger.info(
+                    "circuit_state_loaded",
+                    name=self.name,
+                    state=self._stats.state,
+                    failure_count=self._stats.failure_count,
+                )
+
+    async def _save_state(self) -> None:
+        """Persist circuit state to database."""
+        if not self._db:
+            return
+
+        now = datetime.utcnow().isoformat()
+
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO circuit_state
+            (name, state, failure_count, success_count, last_failure_time,
+             last_state_change, total_calls, total_failures, total_successes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                self.name,
+                self._stats.state.value,
+                self._stats.failure_count,
+                self._stats.success_count,
+                self._stats.last_failure_time,
+                self._stats.last_state_change,
+                self._stats.total_calls,
+                self._stats.total_failures,
+                self._stats.total_successes,
+                now,
+            ),
+        )
+        await self._db.commit()
+
+    async def _check_half_open_timeout(self) -> None:
+        """Check if enough time has passed to try half-open state."""
+        if self._stats.state != CircuitState.OPEN:
+            return
+
+        if not self._stats.last_failure_time:
+            return
+
+        elapsed_ms = (time.time() - self._stats.last_failure_time) * 1000
+        if elapsed_ms >= self.config.timeout_ms:
+            await self._transition_to(CircuitState.HALF_OPEN)
+
+    async def _transition_to(self, new_state: CircuitState) -> None:
+        """Transition to a new circuit state.
+
+        Args:
+            new_state: Target state.
+        """
+        old_state = self._stats.state
+        self._stats.state = new_state
+        self._stats.last_state_change = time.time()
+
+        if new_state == CircuitState.HALF_OPEN:
+            self._stats.success_count = 0
+            self._stats.failure_count = 0
+        elif new_state == CircuitState.CLOSED:
+            self._stats.failure_count = 0
+            self._stats.success_count = 0
+
+        await self._save_state()
+
+        logger.info(
+            "circuit_state_changed",
+            name=self.name,
+            old_state=old_state,
+            new_state=new_state,
+        )
+        metrics.record_circuit_state_change(self.name, new_state.value)
+
+    async def call(self, func: Callable[..., T], *args, **kwargs) -> T:
+        """Execute a function through the circuit breaker.
+
+        Args:
+            func: Function to execute.
+            *args: Positional arguments.
+            **kwargs: Keyword arguments.
 
         Returns:
-            List of affected component identifiers.
+            Function result.
+
+        Raises:
+            CircuitOpenError: If circuit is open.
         """
-        components = []
+        if not self._initialized:
+            await self.initialize()
 
-        if self.node_id:
-            components.append(f"node:{self.node_id}")
-        if self.graph_id:
-            components.append(f"graph:{self.graph_id}")
-        if self.trace_id:
-            components.append(f"trace:{self.trace_id}")
+        async with self._lock:
+            self._stats.total_calls += 1
+            await self._check_half_open_timeout()
 
-        return components
+            # Check if circuit is open
+            if self._stats.state == CircuitState.OPEN:
+                logger.warning(
+                    "circuit_open_rejected",
+                    name=self.name,
+                    failure_count=self._stats.failure_count,
+                )
+                raise CircuitOpenError(
+                    f"Circuit breaker '{self.name}' is open",
+                    service=self.name,
+                )
+
+            # Check half-open max calls
+            if self._stats.state == CircuitState.HALF_OPEN:
+                current_attempts = self._stats.success_count + self._stats.failure_count
+                if current_attempts >= self.config.half_open_max_calls:
+                    raise CircuitOpenError(
+                        f"Circuit breaker '{self.name}' half-open max calls reached",
+                        service=self.name,
+                    )
+
+        # Execute function
+        try:
+            if asyncio.iscoroutinefunction(func):
+                result = await func(*args, **kwargs)
+            else:
+                result = func(*args, **kwargs)
+
+            # Record success
+            async with self._lock:
+                self._stats.success_count += 1
+                self._stats.total_successes += 1
+
+                if self._stats.state == CircuitState.HALF_OPEN:
+                    if self._stats.success_count >= self.config.success_threshold:
+                        await self._transition_to(CircuitState.CLOSED)
+
+                await self._save_state()
+
+            return result
+
+        except Exception as e:
+            # Record failure
+            async with self._lock:
+                self._stats.failure_count += 1
+                self._stats.total_failures += 1
+                self._stats.last_failure_time = time.time()
+
+                if self._stats.state == CircuitState.HALF_OPEN:
+                    # Any failure in half-open goes back to open
+                    await self._transition_to(CircuitState.OPEN)
+                elif self._stats.failure_count >= self.config.failure_threshold:
+                    await self._transition_to(CircuitState.OPEN)
+
+                await self._save_state()
+
+            raise
+
+    @asynccontextmanager
+    async def protect(self):
+        """Context manager for circuit breaker protection.
+
+        Example:
+            async with circuit.protect():
+                result = await risky_operation()
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        async with self._lock:
+            self._stats.total_calls += 1
+            await self._check_half_open_timeout()
+
+            if self._stats.state == CircuitState.OPEN:
+                raise CircuitOpenError(
+                    f"Circuit breaker '{self.name}' is open",
+                    service=self.name,
+                )
+
+        try:
+            yield
+
+            # Record success
+            async with self._lock:
+                self._stats.success_count += 1
+                self._stats.total_successes += 1
+
+                if self._stats.state == CircuitState.HALF_OPEN:
+                    if self._stats.success_count >= self.config.success_threshold:
+                        await self._transition_to(CircuitState.CLOSED)
+
+                await self._save_state()
+
+        except Exception as e:
+            # Record failure
+            async with self._lock:
+                self._stats.failure_count += 1
+                self._stats.total_failures += 1
+                self._stats.last_failure_time = time.time()
+
+                if self._stats.state == CircuitState.HALF_OPEN:
+                    await self._transition_to(CircuitState.OPEN)
+                elif self._stats.failure_count >= self.config.failure_threshold:
+                    await self._transition_to(CircuitState.OPEN)
+
+                await self._save_state()
+
+            raise
+
+    def get_stats(self) -> CircuitStats:
+        """Get current circuit breaker statistics.
+
+        Returns:
+            Circuit statistics.
+        """
+        return self._stats
+
+    async def reset(self) -> None:
+        """Reset circuit breaker to closed state."""
+        async with self._lock:
+            await self._transition_to(CircuitState.CLOSED)
+            logger.info("circuit_breaker_reset", name=self.name)
 
 
-# Specific error types
-
-class ValidationError(TinyLLMError):
-    """Validation error."""
-
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.VALIDATION,
-            severity=ErrorSeverity.ERROR,
-            **kwargs
-        )
+# ============================================================================
+# Global Exception Handler
+# ============================================================================
 
 
-class ExecutionError(TinyLLMError):
-    """Execution error."""
+def global_exception_handler(
+    dlq: Optional[DeadLetterQueue] = None,
+    send_to_dlq: bool = True,
+):
+    """Decorator for global exception handling.
 
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.EXECUTION,
-            severity=ErrorSeverity.ERROR,
-            **kwargs
-        )
+    Args:
+        dlq: Dead letter queue instance (creates new if None).
+        send_to_dlq: Whether to send failed messages to DLQ.
 
+    Example:
+        @global_exception_handler()
+        async def process_message(msg):
+            ...
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs) -> T:
+            try:
+                return await func(*args, **kwargs)
+            except TinyLLMError as e:
+                logger.error(
+                    "tinyllm_error",
+                    function=func.__name__,
+                    error_type=e.__class__.__name__,
+                    error_code=e.code,
+                    error_message=e.message,
+                    recoverable=e.recoverable,
+                    details=e.details,
+                )
+                metrics.increment_error(e.code)
 
-class TimeoutError(TinyLLMError):
-    """Timeout error."""
+                # Send to DLQ if configured and retryable
+                if send_to_dlq and dlq and e.recoverable:
+                    message_id = kwargs.get("message_id", "unknown")
+                    trace_id = kwargs.get("trace_id", "unknown")
+                    payload = kwargs.get("payload", {})
+                    await dlq.enqueue(message_id, trace_id, payload, e)
 
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.TIMEOUT,
-            severity=ErrorSeverity.WARNING,
-            **kwargs
-        )
+                raise
 
+            except Exception as e:
+                logger.error(
+                    "unexpected_error",
+                    function=func.__name__,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    exc_info=True,
+                )
+                metrics.increment_error("UNKNOWN")
+                raise
 
-class ResourceError(TinyLLMError):
-    """Resource error."""
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs) -> T:
+            try:
+                return func(*args, **kwargs)
+            except TinyLLMError as e:
+                logger.error(
+                    "tinyllm_error",
+                    function=func.__name__,
+                    error_type=e.__class__.__name__,
+                    error_code=e.code,
+                    error_message=e.message,
+                    recoverable=e.recoverable,
+                    details=e.details,
+                )
+                metrics.increment_error(e.code)
+                raise
 
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.RESOURCE,
-            severity=ErrorSeverity.ERROR,
-            **kwargs
-        )
+            except Exception as e:
+                logger.error(
+                    "unexpected_error",
+                    function=func.__name__,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    exc_info=True,
+                )
+                metrics.increment_error("UNKNOWN")
+                raise
 
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
 
-class NetworkError(TinyLLMError):
-    """Network error."""
-
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.NETWORK,
-            severity=ErrorSeverity.WARNING,
-            **kwargs
-        )
-
-
-class ModelError(TinyLLMError):
-    """Model error."""
-
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.MODEL,
-            severity=ErrorSeverity.ERROR,
-            **kwargs
-        )
-
-
-class ConfigurationError(TinyLLMError):
-    """Configuration error."""
-
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            category=ErrorCategory.CONFIGURATION,
-            severity=ErrorSeverity.CRITICAL,
-            **kwargs
-        )
+    return decorator

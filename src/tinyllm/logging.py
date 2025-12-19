@@ -7,9 +7,10 @@ for both development (colored console output) and production (JSON) modes.
 import hashlib
 import logging
 import random
+import re
 import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Pattern
 
 import structlog
 from structlog.types import EventDict, Processor
@@ -19,6 +20,34 @@ def add_app_context(logger: Any, method_name: str, event_dict: EventDict) -> Eve
     """Add application context to log events."""
     event_dict["app"] = "tinyllm"
     event_dict["version"] = "0.1.0"
+    return event_dict
+
+
+def add_trace_context(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
+    """Add trace and span IDs to log events if available.
+
+    This processor automatically injects OpenTelemetry trace and span IDs
+    into log records for correlation between logs and traces.
+    """
+    try:
+        # Try to get trace context from OpenTelemetry if available
+        from tinyllm.telemetry import get_current_trace_id, get_current_span_id
+
+        trace_id = get_current_trace_id()
+        span_id = get_current_span_id()
+
+        if trace_id:
+            event_dict["trace_id"] = trace_id
+        if span_id:
+            event_dict["span_id"] = span_id
+    except ImportError:
+        # OpenTelemetry not available, skip trace context
+        pass
+    except Exception:
+        # Silently ignore errors in trace context injection
+        # to avoid breaking logging
+        pass
+
     return event_dict
 
 
@@ -183,6 +212,7 @@ def configure_logging(
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         add_app_context,
+        add_trace_context,  # Inject trace/span IDs for correlation
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),

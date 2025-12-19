@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-stress test-cov clean install help
+.PHONY: test test-unit test-integration test-stress test-load test-chaos test-perf test-cov test-cov-gate clean install help
 .PHONY: docker-build docker-up docker-down docker-logs docker-clean docker-pull-models
 .PHONY: docker-health docker-shell docker-test docker-backup docker-restore
 
@@ -11,7 +11,11 @@ help:
 	@echo "  make test-unit          Run unit tests only"
 	@echo "  make test-integration   Run integration tests only"
 	@echo "  make test-stress        Run stress tests only"
+	@echo "  make test-load          Run load tests only"
+	@echo "  make test-chaos         Run chaos tests only"
+	@echo "  make test-perf          Run performance tests only"
 	@echo "  make test-cov           Run tests with coverage report"
+	@echo "  make test-cov-gate      Run tests with coverage gate (requires >=80%)"
 	@echo "  make clean              Remove cache and build artifacts"
 	@echo ""
 	@echo "Docker Commands:"
@@ -43,8 +47,20 @@ test-integration:
 test-stress:
 	.venv/bin/python -m pytest tests/stress/ -v
 
+test-load:
+	.venv/bin/python -m pytest tests/load/ -v -m load
+
+test-chaos:
+	.venv/bin/python -m pytest tests/chaos/ -v -m chaos
+
+test-perf:
+	.venv/bin/python -m pytest tests/perf/ -v -m perf
+
 test-cov:
 	.venv/bin/python -m pytest tests/ --cov=src/tinyllm --cov-report=html --cov-report=term
+
+test-cov-gate:
+	.venv/bin/python -m pytest tests/ --cov=src/tinyllm --cov-report=html --cov-report=term --cov-fail-under=80
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

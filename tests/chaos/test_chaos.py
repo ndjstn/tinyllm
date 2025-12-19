@@ -7,6 +7,10 @@ under various failure conditions, network issues, and resource constraints.
 import asyncio
 import random
 import time
+
+import pytest
+
+pytestmark = pytest.mark.chaos
 from typing import Any, Callable, Optional
 from unittest.mock import AsyncMock, Mock, patch
 

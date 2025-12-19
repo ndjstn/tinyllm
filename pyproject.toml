@@ -66,9 +66,11 @@ dev = [
     "pytest-rerunfailures>=13.0",
     "pytest-timeout>=2.2.0",
     "pytest-mock>=3.12.0",
+    "pytest-benchmark>=4.0.0",
     "faker>=22.0.0",
     "factory-boy>=3.3.0",
     "hypothesis>=6.98.0",
+    "locust>=2.20.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
     "pre-commit>=3.7.0",
@@ -139,14 +141,18 @@ asyncio_mode = "auto"
 addopts = "-v --tb=short --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
+    "integration: marks tests as integration tests requiring external services",
     "unit: marks tests as unit tests",
     "flaky: marks tests as potentially flaky",
     "quarantine: marks tests that are quarantined due to flakiness",
+    "load: marks tests as load tests",
+    "chaos: marks tests as chaos engineering tests",
+    "perf: marks tests as performance tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+timeout = 300
 # Parallel execution settings
 # Use with: pytest -n auto
 # Or: pytest -n 4
@@ -156,6 +162,12 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["src/tinyllm"]
 branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -164,7 +176,19 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
+    "@abstract",
+    "except ImportError:",
 ]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 80.0
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
 
 [dependency-groups]
 dev = [
