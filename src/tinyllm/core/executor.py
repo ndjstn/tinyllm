@@ -7,7 +7,7 @@ a graph, managing state and producing traces.
 import asyncio
 import time
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -25,6 +25,7 @@ from tinyllm.core.message import (
 )
 from tinyllm.core.node import BaseNode, NodeResult
 from tinyllm.core.trace import ExecutionTrace, TraceRecorder
+from tinyllm.profiling import get_profiling_context
 
 
 class DegradationMode(str, Enum):
@@ -56,6 +57,12 @@ class ExecutorConfig(BaseModel):
     )
     enable_partial_results: bool = Field(
         default=True, description="Return partial results even when execution doesn't complete fully"
+    )
+    enable_checkpointing: bool = Field(
+        default=False, description="Enable checkpointing for recovery"
+    )
+    checkpoint_interval: int = Field(
+        default=5, ge=1, description="Create checkpoint every N nodes"
     )
 
 
@@ -98,6 +105,8 @@ class Executor:
         self.system_config = system_config
         self._failed_nodes: List[str] = []
         self._partial_results: List[NodeResult] = []
+        self._checkpoints: List[Dict[str, Any]] = []
+        self._last_checkpoint_step = 0
 
     async def execute(self, task: TaskPayload) -> TaskResponse:
         """Execute a task through the graph.
@@ -141,10 +150,12 @@ class Executor:
             context.add_message(initial_message)
             recorder.add_message(initial_message)
 
-            # Execute graph
-            result = await self._execute_loop(
-                initial_message, entry_node, context, recorder
-            )
+            # Execute graph with profiling
+            profiling = get_profiling_context(enable_performance=True, enable_memory=False)
+            async with profiling.profile_async(f"graph_{self.graph.id}"):
+                result = await self._execute_loop(
+                    initial_message, entry_node, context, recorder
+                )
 
             # Build response
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
@@ -227,16 +238,22 @@ class Executor:
             if context.elapsed_ms > self.config.timeout_ms:
                 raise asyncio.TimeoutError()
 
-            # Execute current node
+            # Execute current node with profiling
             context.visit_node(current_node.id)
             recorder.start_node(
                 current_node.id, current_node.type.value, current_message
             )
 
-            result = await self._execute_node(current_node, current_message, context)
+            profiling = get_profiling_context(enable_performance=True, enable_memory=False)
+            async with profiling.profile_async(f"node_{current_node.id}"):
+                result = await self._execute_node(current_node, current_message, context)
 
             recorder.complete_node(current_node.id, result)
             current_node.update_stats(result.success, result.latency_ms)
+
+            # Create checkpoint if needed
+            if self._should_create_checkpoint(context):
+                self._create_checkpoint(current_node, current_message, context, result)
 
             # Handle failure with degradation
             if not result.success:
@@ -507,6 +524,184 @@ class Executor:
             },
             latency_ms=last_result.latency_ms,
         )
+
+    def _create_checkpoint(
+        self,
+        current_node: BaseNode,
+        current_message: Message,
+        context: ExecutionContext,
+        result: NodeResult,
+    ) -> None:
+        """Create a checkpoint of current execution state.
+
+        Args:
+            current_node: Current node being executed.
+            current_message: Current message.
+            context: Execution context.
+            result: Last node result.
+        """
+        checkpoint = {
+            "step": context.step_count,
+            "node_id": current_node.id,
+            "message_id": current_message.message_id,
+            "visited_nodes": list(context.visited_nodes),
+            "success": result.success,
+            "timestamp": time.time(),
+            "partial_results": len(self._partial_results),
+        }
+
+        self._checkpoints.append(checkpoint)
+        self._last_checkpoint_step = context.step_count
+
+        from tinyllm.logging import get_logger
+
+        logger = get_logger(__name__)
+        logger.info(
+            "checkpoint_created",
+            trace_id=context.trace_id,
+            step=context.step_count,
+            node_id=current_node.id,
+        )
+
+    def _should_create_checkpoint(self, context: ExecutionContext) -> bool:
+        """Check if we should create a checkpoint.
+
+        Args:
+            context: Execution context.
+
+        Returns:
+            True if checkpoint should be created.
+        """
+        if not self.config.enable_checkpointing:
+            return False
+
+        steps_since_checkpoint = context.step_count - self._last_checkpoint_step
+        return steps_since_checkpoint >= self.config.checkpoint_interval
+
+    def get_recovery_point(self) -> Optional[Dict[str, Any]]:
+        """Get the last successful checkpoint for recovery.
+
+        Returns:
+            Last successful checkpoint or None.
+        """
+        # Find last successful checkpoint
+        for checkpoint in reversed(self._checkpoints):
+            if checkpoint.get("success", False):
+                return checkpoint
+
+        return None
+
+    async def recover_from_checkpoint(
+        self,
+        checkpoint: Dict[str, Any],
+        task: TaskPayload,
+    ) -> TaskResponse:
+        """Attempt to recover execution from a checkpoint.
+
+        Args:
+            checkpoint: Checkpoint to recover from.
+            task: Original task payload.
+
+        Returns:
+            TaskResponse from recovered execution.
+        """
+        from tinyllm.logging import get_logger
+
+        logger = get_logger(__name__)
+        logger.info(
+            "recovering_from_checkpoint",
+            checkpoint_step=checkpoint.get("step"),
+            node_id=checkpoint.get("node_id"),
+        )
+
+        # Create a new execution context from checkpoint
+        trace_id = str(uuid4())
+        context = ExecutionContext(
+            trace_id=trace_id,
+            graph_id=self.graph.id,
+            config=self.system_config or Config(),
+        )
+
+        # Restore visited nodes
+        visited_nodes = checkpoint.get("visited_nodes", [])
+        for node_id in visited_nodes:
+            context.visit_node(node_id)
+
+        # Get the node to resume from
+        resume_node_id = checkpoint.get("node_id")
+        resume_node = self.graph.get_node(resume_node_id)
+
+        if not resume_node:
+            raise ExecutionError(f"Cannot resume: node {resume_node_id} not found")
+
+        # Create message for resumption
+        resume_message = Message(
+            trace_id=trace_id,
+            source_node="executor",
+            target_node=resume_node_id,
+            payload=MessagePayload(
+                task=task.content,
+                content=task.content,
+                structured={"recovered": True, "from_checkpoint": checkpoint.get("step")},
+            ),
+        )
+
+        recorder = TraceRecorder(trace_id, self.graph.id, task)
+        context.add_message(resume_message)
+        recorder.add_message(resume_message)
+
+        # Continue execution from checkpoint
+        result = await self._execute_loop(resume_message, resume_node, context, recorder)
+
+        # Build response
+        start_time = time.perf_counter()
+        elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+        response = TaskResponse(
+            trace_id=trace_id,
+            success=result.success,
+            content=self._extract_content(result),
+            total_latency_ms=elapsed_ms,
+            nodes_executed=context.step_count,
+            tokens_used=context.total_tokens,
+        )
+
+        if not result.success and result.error:
+            response.error = ErrorInfo(
+                code=ErrorInfo.Codes.UNKNOWN,
+                message=result.error,
+            )
+
+        recorder.complete(response)
+        return response
+
+    def clear_checkpoints(self) -> None:
+        """Clear all checkpoints."""
+        self._checkpoints.clear()
+        self._last_checkpoint_step = 0
+
+        from tinyllm.logging import get_logger
+
+        logger = get_logger(__name__)
+        logger.info("checkpoints_cleared")
+
+    def get_checkpoint_stats(self) -> Dict[str, Any]:
+        """Get statistics about checkpoints.
+
+        Returns:
+            Dictionary with checkpoint statistics.
+        """
+        successful = sum(1 for cp in self._checkpoints if cp.get("success", False))
+        failed = len(self._checkpoints) - successful
+
+        return {
+            "total_checkpoints": len(self._checkpoints),
+            "successful_checkpoints": successful,
+            "failed_checkpoints": failed,
+            "last_checkpoint_step": self._last_checkpoint_step,
+            "checkpointing_enabled": self.config.enable_checkpointing,
+            "checkpoint_interval": self.config.checkpoint_interval,
+        }
 
     def get_trace(self) -> Optional[ExecutionTrace]:
         """Get the execution trace (if tracing enabled).
