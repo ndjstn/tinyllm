@@ -3,7 +3,92 @@
 Provides comprehensive metrics tracking for monitoring TinyLLM performance,
 resource usage, and operational health. Exports metrics via HTTP for Prometheus scraping.
 
-Includes cardinality controls to prevent metric explosion from unbounded label combinations.
+Features:
+---------
+1. **Cardinality Controls**: Prevents metric explosion by limiting unique label combinations
+2. **Error Rate Alerting**: Automatic alerting when error thresholds are exceeded
+3. **Request Tracking**: Latency, throughput, and active request monitoring
+4. **Resource Metrics**: Token usage, model load times, memory operations
+5. **Circuit Breakers**: State and failure tracking for circuit breakers
+6. **Graph/Node Metrics**: Execution tracking at graph and node levels
+
+Architecture:
+-------------
+The metrics system is built on Prometheus client library and provides:
+
+- **MetricsCollector**: Singleton collector managing all metrics
+- **CardinalityTracker**: Enforces limits on metric label combinations
+- **Error Rate Monitor**: Sliding window error tracking with configurable thresholds
+- **HTTP Server**: Metrics endpoint for Prometheus scraping
+
+Usage:
+------
+Basic usage with singleton pattern:
+
+    >>> from tinyllm.metrics import get_metrics_collector, start_metrics_server
+    >>>
+    >>> # Get collector
+    >>> metrics = get_metrics_collector()
+    >>>
+    >>> # Track requests
+    >>> metrics.increment_request_count(model="qwen2.5:0.5b", graph="main")
+    >>>
+    >>> # Track latency
+    >>> with metrics.track_request_latency(model="qwen2.5:0.5b"):
+    ...     # Your request handling code
+    ...     pass
+    >>>
+    >>> # Start metrics server for Prometheus
+    >>> start_metrics_server(port=9090)
+
+Advanced Features:
+------------------
+Cardinality Control:
+
+    >>> metrics = get_metrics_collector()
+    >>> stats = metrics.get_cardinality_stats()
+    >>> print(f"Total label combinations: {stats['total_label_combinations']}")
+    >>> print(f"Max allowed: {stats['max_cardinality']}")
+
+Error Rate Monitoring:
+
+    >>> from tinyllm.metrics import get_metrics_collector
+    >>>
+    >>> metrics = get_metrics_collector()
+    >>>
+    >>> # Configure thresholds
+    >>> metrics.set_error_count_threshold(10)  # Alert on 10 errors
+    >>> metrics.set_alert_window(300)  # In 5 minute window
+    >>>
+    >>> # Track errors
+    >>> metrics.increment_error_count("timeout", model="qwen2.5:0.5b")
+    >>>
+    >>> # Check error rate
+    >>> rate_stats = metrics.get_current_error_rate()
+    >>> if rate_stats['threshold_exceeded']:
+    ...     print(f"Alert! {rate_stats['error_count']} errors detected")
+
+Integration:
+------------
+The metrics system integrates with:
+- Prometheus for scraping and visualization
+- Grafana for dashboards
+- Alert Manager for notifications
+- OpenTelemetry for unified observability
+
+Best Practices:
+---------------
+1. **Keep cardinality low**: Avoid unbounded label values (e.g., user IDs, request IDs)
+2. **Use appropriate metric types**: Counters for totals, Gauges for current values, Histograms for distributions
+3. **Set meaningful labels**: Use consistent, well-defined label names
+4. **Monitor cardinality**: Regularly check cardinality stats to detect issues
+5. **Configure alerts**: Set appropriate error thresholds for your use case
+
+See Also:
+---------
+- tinyllm.logging: Structured logging with trace correlation
+- tinyllm.events: Event system for audit trails and notifications
+- tinyllm.telemetry: Distributed tracing with OpenTelemetry
 """
 
 import time

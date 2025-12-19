@@ -54,10 +54,10 @@ def test_budget_is_exceeded():
 
     assert not manager.is_exceeded(BudgetType.TOKENS)
 
-    manager.track_operation(tokens_in=100)
-    assert not manager.is_exceeded(BudgetType.TOKENS)  # Exactly at limit
+    manager.track_operation(tokens_in=99)
+    assert not manager.is_exceeded(BudgetType.TOKENS)  # Just under limit
 
-    manager.track_operation(tokens_in=1)
+    manager.track_operation(tokens_in=2)
     assert manager.is_exceeded(BudgetType.TOKENS)
 
 

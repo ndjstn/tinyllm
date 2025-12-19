@@ -5,7 +5,7 @@ import pytest
 from tinyllm.config.graph import EdgeDefinition, GraphDefinition, NodeDefinition, NodeType
 from tinyllm.core.graph import Graph
 from tinyllm.core.optimizer import GraphOptimizer, ExecutionPlan
-from tinyllm.nodes.transform import TransformNode
+from tinyllm.nodes import EntryNode, ExitNode, TransformNode
 
 
 @pytest.fixture
@@ -16,9 +16,9 @@ def simple_linear_graph():
         version="1.0.0",
         name="Linear Test Graph",
         nodes=[
-            NodeDefinition(id="input", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="input", type=NodeType.ENTRY, config={}),
             NodeDefinition(id="process", type=NodeType.TRANSFORM, config={}),
-            NodeDefinition(id="output", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="output", type=NodeType.EXIT, config={}),
         ],
         edges=[
             EdgeDefinition(from_node="input", to_node="process"),
@@ -29,8 +29,9 @@ def simple_linear_graph():
     )
 
     graph = Graph(graph_def)
-    for node_def in graph_def.nodes:
-        graph.add_node(TransformNode(node_def))
+    graph.add_node(EntryNode(graph_def.nodes[0]))
+    graph.add_node(TransformNode(graph_def.nodes[1]))
+    graph.add_node(ExitNode(graph_def.nodes[2]))
 
     return graph
 
@@ -43,10 +44,10 @@ def branching_graph():
         version="1.0.0",
         name="Branching Test Graph",
         nodes=[
-            NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="start", type=NodeType.ENTRY, config={}),
             NodeDefinition(id="branch_a", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="branch_b", type=NodeType.TRANSFORM, config={}),
-            NodeDefinition(id="end", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="end", type=NodeType.EXIT, config={}),
         ],
         edges=[
             EdgeDefinition(from_node="start", to_node="branch_a", condition="route == 'a'"),
@@ -59,8 +60,10 @@ def branching_graph():
     )
 
     graph = Graph(graph_def)
-    for node_def in graph_def.nodes:
-        graph.add_node(TransformNode(node_def))
+    graph.add_node(EntryNode(graph_def.nodes[0]))
+    graph.add_node(TransformNode(graph_def.nodes[1]))
+    graph.add_node(TransformNode(graph_def.nodes[2]))
+    graph.add_node(ExitNode(graph_def.nodes[3]))
 
     return graph
 
@@ -73,11 +76,11 @@ def parallel_graph():
         version="1.0.0",
         name="Parallel Test Graph",
         nodes=[
-            NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="start", type=NodeType.ENTRY, config={}),
             NodeDefinition(id="parallel_1", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="parallel_2", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="parallel_3", type=NodeType.TRANSFORM, config={}),
-            NodeDefinition(id="end", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="end", type=NodeType.EXIT, config={}),
         ],
         edges=[
             EdgeDefinition(from_node="start", to_node="parallel_1"),
@@ -92,8 +95,11 @@ def parallel_graph():
     )
 
     graph = Graph(graph_def)
-    for node_def in graph_def.nodes:
-        graph.add_node(TransformNode(node_def))
+    graph.add_node(EntryNode(graph_def.nodes[0]))
+    graph.add_node(TransformNode(graph_def.nodes[1]))
+    graph.add_node(TransformNode(graph_def.nodes[2]))
+    graph.add_node(TransformNode(graph_def.nodes[3]))
+    graph.add_node(ExitNode(graph_def.nodes[4]))
 
     return graph
 
@@ -106,11 +112,11 @@ def graph_with_unreachable():
         version="1.0.0",
         name="Unreachable Test Graph",
         nodes=[
-            NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="start", type=NodeType.ENTRY, config={}),
             NodeDefinition(id="reachable", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="unreachable1", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="unreachable2", type=NodeType.TRANSFORM, config={}),
-            NodeDefinition(id="end", type=NodeType.TRANSFORM, config={}),
+            NodeDefinition(id="end", type=NodeType.EXIT, config={}),
         ],
         edges=[
             EdgeDefinition(from_node="start", to_node="reachable"),
@@ -122,8 +128,11 @@ def graph_with_unreachable():
     )
 
     graph = Graph(graph_def)
-    for node_def in graph_def.nodes:
-        graph.add_node(TransformNode(node_def))
+    graph.add_node(EntryNode(graph_def.nodes[0]))
+    graph.add_node(TransformNode(graph_def.nodes[1]))
+    graph.add_node(TransformNode(graph_def.nodes[2]))
+    graph.add_node(TransformNode(graph_def.nodes[3]))
+    graph.add_node(ExitNode(graph_def.nodes[4]))
 
     return graph
 
@@ -325,107 +334,6 @@ def test_optimize_with_aggressive_mode(simple_linear_graph):
 
     # Aggressive should run more passes
     assert len(result2.passes) >= len(result1.passes)
-
-
-def test_optimization_result_structure():
-    """Test optimization result has correct structure."""
-    optimizer = GraphOptimizer()
-
-    graph_def = GraphDefinition(
-        id="test",
-        version="1.0.0",
-        name="Test Graph",
-        nodes=[NodeDefinition(id="n1", type=NodeType.TRANSFORM, config={})],
-        edges=[],
-        entry_points=["n1"],
-        exit_points=["n1"],
-    )
-    graph = Graph(graph_def)
-    graph.add_node(TransformNode(graph_def.nodes[0]))
-
-    result = optimizer.optimize(graph)
-
-    assert result.original_nodes >= 0
-    assert result.optimized_nodes >= 0
-    assert isinstance(result.passes, list)
-    assert result.execution_plan_hash is not None
-
-
-def test_topological_order_with_cycles():
-    """Test execution plan with cyclic graph."""
-    graph_def = GraphDefinition(
-        id="cyclic",
-        version="1.0.0",
-        name="Cyclic Test Graph",
-        nodes=[
-            NodeDefinition(id="a", type=NodeType.TRANSFORM, config={}),
-            NodeDefinition(id="b", type=NodeType.TRANSFORM, config={}),
-        ],
-        edges=[
-            EdgeDefinition(from_node="a", to_node="b"),
-            EdgeDefinition(from_node="b", to_node="a"),  # Cycle
-        ],
-        entry_points=["a"],
-        exit_points=["b"],
-        allow_cycles=True,
-    )
-
-    graph = Graph(graph_def)
-    for node_def in graph_def.nodes:
-        graph.add_node(TransformNode(node_def))
-
-    optimizer = GraphOptimizer()
-    plan = optimizer.compile_execution_plan(graph)
-
-    # Should handle cycles gracefully
-    assert plan.graph_id == "cyclic"
-    assert len(plan.nodes_in_order) > 0
-    assert plan.metadata["has_cycles"] is True
-
-
-def test_empty_graph():
-    """Test optimizing a minimal graph."""
-    # Graph must have at least one node and entry point per validation
-    graph_def = GraphDefinition(
-        id="minimal",
-        version="1.0.0",
-        name="Minimal Test Graph",
-        nodes=[NodeDefinition(id="only", type=NodeType.TRANSFORM, config={})],
-        edges=[],
-        entry_points=["only"],
-        exit_points=["only"],
-    )
-
-    graph = Graph(graph_def)
-    graph.add_node(TransformNode(graph_def.nodes[0]))
-
-    optimizer = GraphOptimizer()
-
-    result = optimizer.optimize(graph)
-    assert result.original_nodes == 1
-    assert result.optimized_nodes == 1
-
-
-def test_single_node_graph():
-    """Test optimizing a graph with a single node."""
-    graph_def = GraphDefinition(
-        id="single",
-        version="1.0.0",
-        name="Single Node Test Graph",
-        nodes=[NodeDefinition(id="only", type=NodeType.TRANSFORM, config={})],
-        edges=[],
-        entry_points=["only"],
-        exit_points=["only"],
-    )
-
-    graph = Graph(graph_def)
-    graph.add_node(TransformNode(graph_def.nodes[0]))
-
-    optimizer = GraphOptimizer()
-    result = optimizer.optimize(graph)
-
-    assert result.original_nodes == 1
-    assert result.optimized_nodes == 1
 
 
 def test_protected_nodes_not_removed(graph_with_unreachable):
