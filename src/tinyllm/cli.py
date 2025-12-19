@@ -1628,5 +1628,225 @@ def benchmark(
     console.print("\n[green]Benchmarks complete![/green]")
 
 
+# Debug subcommand
+debug_app = typer.Typer(help="Debug and inspection commands")
+app.add_typer(debug_app, name="debug")
+
+
+@debug_app.command("inspect")
+def debug_inspect(
+    component: str = typer.Option(
+        "all",
+        "--component",
+        "-c",
+        help="Component to inspect (metrics, events, logs, telemetry, all)",
+    ),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+):
+    """Inspect observability system state.
+
+    This command provides real-time debugging information about the
+    observability stack including metrics, events, and telemetry.
+    """
+    import json as json_lib
+
+    results = {}
+
+    # Metrics inspection
+    if component in ("all", "metrics"):
+        from tinyllm.metrics import get_metrics_collector
+
+        try:
+            collector = get_metrics_collector()
+            metrics_data = {
+                "summary": collector.get_metrics_summary(),
+                "cardinality_stats": collector.get_cardinality_stats(),
+            }
+            results["metrics"] = metrics_data
+
+            if not json_output:
+                console.print("\n[bold cyan]Metrics System:[/bold cyan]")
+                summary = metrics_data["summary"]
+                console.print(f"  Collector: {summary.get('collector', 'N/A')}")
+                console.print(f"  Registry: {summary.get('registry', 'N/A')}")
+                console.print(f"  Total metrics: {summary.get('metrics_count', 0)}")
+
+                cardinality = metrics_data["cardinality_stats"]
+                console.print(f"\n[bold]Cardinality Stats:[/bold]")
+                console.print(f"  Total combinations: {cardinality.get('total_label_combinations', 0)}")
+                console.print(f"  Max cardinality: {cardinality.get('max_cardinality', 0)}")
+
+                metrics_info = cardinality.get("metrics", {})
+                if metrics_info:
+                    console.print(f"\n[bold]Per-Metric Cardinality:[/bold]")
+                    for metric_name, stats in list(metrics_info.items())[:10]:
+                        console.print(f"    {metric_name}: {stats.get('cardinality', 0)} combinations, {stats.get('dropped', 0)} dropped")
+        except Exception as e:
+            results["metrics"] = {"error": str(e)}
+            if not json_output:
+                console.print(f"\n[red]Metrics inspection error: {e}[/red]")
+
+    # Events inspection
+    if component in ("all", "events"):
+        from tinyllm.events import get_event_emitter
+
+        try:
+            emitter = get_event_emitter()
+            events_data = {
+                "enabled": emitter._enabled,
+                "handlers": [h.__class__.__name__ for h in emitter.handlers],
+                "handler_count": len(emitter.handlers),
+            }
+
+            # If there's a buffered handler, get recent events
+            from tinyllm.events import BufferedEventHandler
+            for handler in emitter.handlers:
+                if isinstance(handler, BufferedEventHandler):
+                    recent_events = handler.get_events(limit=10)
+                    events_data["recent_events"] = [
+                        {
+                            "event_type": e.event_type,
+                            "category": e.category.value,
+                            "severity": e.severity.value,
+                            "message": e.message,
+                            "timestamp": e.timestamp,
+                        }
+                        for e in recent_events
+                    ]
+                    events_data["total_buffered"] = len(handler.events)
+                    break
+
+            results["events"] = events_data
+
+            if not json_output:
+                console.print("\n[bold cyan]Event System:[/bold cyan]")
+                console.print(f"  Enabled: {events_data.get('enabled', False)}")
+                console.print(f"  Handlers: {', '.join(events_data.get('handlers', []))}")
+
+                if "recent_events" in events_data:
+                    console.print(f"\n[bold]Recent Events ({events_data.get('total_buffered', 0)} total):[/bold]")
+                    for event in events_data.get("recent_events", [])[:5]:
+                        console.print(f"    [{event['severity']}] {event['event_type']}: {event['message']}")
+        except Exception as e:
+            results["events"] = {"error": str(e)}
+            if not json_output:
+                console.print(f"\n[red]Events inspection error: {e}[/red]")
+
+    # Telemetry inspection
+    if component in ("all", "telemetry"):
+        from tinyllm.telemetry import is_telemetry_enabled, get_current_trace_id, get_current_span_id
+
+        try:
+            telemetry_data = {
+                "enabled": is_telemetry_enabled(),
+                "current_trace_id": get_current_trace_id(),
+                "current_span_id": get_current_span_id(),
+            }
+            results["telemetry"] = telemetry_data
+
+            if not json_output:
+                console.print("\n[bold cyan]Telemetry System:[/bold cyan]")
+                console.print(f"  Enabled: {telemetry_data.get('enabled', False)}")
+                if telemetry_data.get("current_trace_id"):
+                    console.print(f"  Current trace: {telemetry_data['current_trace_id']}")
+                    console.print(f"  Current span: {telemetry_data['current_span_id']}")
+        except Exception as e:
+            results["telemetry"] = {"error": str(e)}
+            if not json_output:
+                console.print(f"\n[red]Telemetry inspection error: {e}[/red]")
+
+    # Logging inspection
+    if component in ("all", "logs"):
+        import structlog
+
+        try:
+            log_data = {
+                "configured": True,
+                "processors": [p.__name__ if hasattr(p, "__name__") else str(p) for p in structlog.get_config().get("processors", [])],
+            }
+            results["logging"] = log_data
+
+            if not json_output:
+                console.print("\n[bold cyan]Logging System:[/bold cyan]")
+                console.print(f"  Configured: {log_data.get('configured', False)}")
+                console.print(f"  Processors: {len(log_data.get('processors', []))}")
+        except Exception as e:
+            results["logging"] = {"error": str(e)}
+            if not json_output:
+                console.print(f"\n[red]Logging inspection error: {e}[/red]")
+
+    # JSON output
+    if json_output:
+        console.print(json_lib.dumps(results, indent=2))
+    else:
+        console.print()
+
+
+@debug_app.command("emit-event")
+def debug_emit_event(
+    event_type: str = typer.Argument(..., help="Event type to emit"),
+    message: str = typer.Argument(..., help="Event message"),
+    severity: str = typer.Option("info", "--severity", "-s", help="Event severity (debug, info, warning, error, critical)"),
+    category: str = typer.Option("system", "--category", "-c", help="Event category"),
+):
+    """Emit a test event for debugging."""
+    from tinyllm.events import emit_event, EventCategory, EventSeverity
+
+    try:
+        # Map string values to enums
+        severity_enum = EventSeverity(severity.lower())
+        category_enum = EventCategory(category.lower())
+
+        event = emit_event(
+            event_type=event_type,
+            category=category_enum,
+            severity=severity_enum,
+            message=message,
+            data={"source": "cli", "test": True},
+        )
+
+        console.print(f"[green]Event emitted:[/green]")
+        console.print(f"  ID: {event.event_id}")
+        console.print(f"  Type: {event.event_type}")
+        console.print(f"  Category: {event.category.value}")
+        console.print(f"  Severity: {event.severity.value}")
+        console.print(f"  Message: {event.message}")
+
+    except ValueError as e:
+        console.print(f"[red]Invalid severity or category: {e}[/red]")
+        console.print("\n[dim]Valid severities: debug, info, warning, error, critical[/dim]")
+        console.print("[dim]Valid categories: system, execution, model, cache, security, performance, user, integration, data[/dim]")
+
+
+@debug_app.command("test-trace")
+def debug_test_trace():
+    """Test trace context injection into logs."""
+    from tinyllm.telemetry import configure_telemetry, TelemetryConfig, trace_span
+    from tinyllm.logging import get_logger
+
+    # Configure telemetry
+    config = TelemetryConfig(
+        enable_tracing=True,
+        service_name="tinyllm-debug",
+        exporter="console",
+        sampling_rate=1.0,
+    )
+    configure_telemetry(config)
+
+    logger = get_logger(__name__, component="debug")
+
+    console.print("[bold]Testing trace context injection...[/bold]\n")
+
+    # Create a span and emit logs
+    with trace_span("test_operation", attributes={"test": "true"}):
+        logger.info("test_log_with_trace", message="This log should have trace and span IDs")
+        console.print("[green]Log emitted within trace span[/green]")
+
+    logger.info("test_log_without_trace", message="This log should NOT have trace IDs")
+    console.print("[green]Log emitted outside trace span[/green]")
+
+    console.print("\n[dim]Check the logs above for trace_id and span_id fields[/dim]")
+
+
 if __name__ == "__main__":
     app()

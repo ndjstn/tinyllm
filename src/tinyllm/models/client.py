@@ -210,6 +210,7 @@ class OllamaClient:
         rate_limit_rps: float = 10.0,
         circuit_breaker_threshold: int = 5,
         default_model: Optional[str] = None,
+        slow_query_threshold_ms: int = 5000,
     ):
         """Initialize Ollama client.
 
@@ -220,6 +221,7 @@ class OllamaClient:
             rate_limit_rps: Rate limit in requests per second.
             circuit_breaker_threshold: Failures before circuit opens.
             default_model: Default model to use for generate calls.
+            slow_query_threshold_ms: Threshold in ms for slow query detection.
         """
         self.host = host.rstrip("/")
         self.timeout = httpx.Timeout(timeout_ms / 1000)
@@ -231,6 +233,8 @@ class OllamaClient:
         self._total_tokens = 0
         self._current_graph = "default"  # Can be set by executor
         self._current_model = default_model  # Current/default model
+        self.slow_query_threshold_ms = slow_query_threshold_ms
+        self._slow_queries: list[dict[str, Any]] = []
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -319,6 +323,8 @@ class OllamaClient:
                     )
 
                     last_error: Optional[Exception] = None
+                    query_start_time = time.monotonic()
+
                     for attempt in range(self.max_retries + 1):
                         try:
                             response = await client.post(
@@ -327,6 +333,32 @@ class OllamaClient:
                             )
                             response.raise_for_status()
                             result = GenerateResponse(**response.json())
+
+                            # Calculate total query time
+                            query_duration_ms = (time.monotonic() - query_start_time) * 1000
+
+                            # Detect slow queries
+                            if query_duration_ms > self.slow_query_threshold_ms:
+                                slow_query_info = {
+                                    "timestamp": time.time(),
+                                    "model": model,
+                                    "duration_ms": query_duration_ms,
+                                    "prompt_length": len(prompt),
+                                    "input_tokens": result.prompt_eval_count or 0,
+                                    "output_tokens": result.eval_count or 0,
+                                    "graph": self._current_graph,
+                                }
+                                self._slow_queries.append(slow_query_info)
+
+                                logger.warning(
+                                    "slow_query_detected",
+                                    model=model,
+                                    duration_ms=query_duration_ms,
+                                    threshold_ms=self.slow_query_threshold_ms,
+                                    prompt_length=len(prompt),
+                                    input_tokens=result.prompt_eval_count or 0,
+                                    output_tokens=result.eval_count or 0,
+                                )
 
                             # Track metrics
                             self._request_count += 1
@@ -398,7 +430,43 @@ class OllamaClient:
             "total_tokens": self._total_tokens,
             "circuit_breaker_state": self._circuit_breaker.state,
             "circuit_breaker_failures": self._circuit_breaker.failures,
+            "slow_query_count": len(self._slow_queries),
+            "slow_query_threshold_ms": self.slow_query_threshold_ms,
         }
+
+    def get_slow_queries(
+        self,
+        limit: Optional[int] = None,
+        min_duration_ms: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Get slow query information.
+
+        Args:
+            limit: Maximum number of queries to return (most recent first).
+            min_duration_ms: Filter queries slower than this threshold.
+
+        Returns:
+            List of slow query info dictionaries.
+        """
+        queries = self._slow_queries
+
+        # Filter by duration if specified
+        if min_duration_ms is not None:
+            queries = [q for q in queries if q["duration_ms"] >= min_duration_ms]
+
+        # Sort by timestamp (most recent first)
+        queries = sorted(queries, key=lambda q: q["timestamp"], reverse=True)
+
+        # Apply limit
+        if limit is not None:
+            queries = queries[:limit]
+
+        return queries
+
+    def clear_slow_queries(self) -> None:
+        """Clear slow query history."""
+        self._slow_queries.clear()
+        logger.info("slow_queries_cleared")
 
     async def generate_stream(
         self,

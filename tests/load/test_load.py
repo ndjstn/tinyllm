@@ -6,15 +6,13 @@ and custom load testing utilities to measure system performance under various lo
 
 import asyncio
 import time
-
-import pytest
-
-pytestmark = pytest.mark.load
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+
+pytestmark = pytest.mark.load
 
 from tinyllm.config.graph import NodeDefinition, NodeType
 from tinyllm.config.loader import Config

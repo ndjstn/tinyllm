@@ -192,5 +192,9 @@ output = "coverage.xml"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.148.7",
     "matplotlib>=3.10.8",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
 ]

@@ -18,8 +18,8 @@ import httpx
 from pydantic import BaseModel, Field, field_validator
 
 from tinyllm.error_aggregation import AggregatedError
+from tinyllm.error_enrichment import EnrichedError
 from tinyllm.error_impact import ImpactLevel, ImpactScore
-from tinyllm.errors import EnrichedError
 from tinyllm.logging import get_logger
 
 logger = get_logger(__name__, component="error_notifications")

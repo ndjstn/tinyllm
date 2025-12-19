@@ -9,7 +9,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from tinyllm.errors import ErrorCategory, ErrorSeverity, TinyLLMError
+from tinyllm.error_enrichment import ErrorCategory, ErrorSeverity
+from tinyllm.errors import TinyLLMError
 from tinyllm.logging import get_logger
 
 logger = get_logger(__name__, component="error_branching")

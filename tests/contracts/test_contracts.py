@@ -444,7 +444,10 @@ class TestTimeoutNodeContract(NodeContractTestBase):
 
     @property
     def minimal_config(self) -> dict:
-        return {"timeout_ms": 5000}
+        return {
+            "timeout_ms": 5000,
+            "inner_node": "test.inner",
+        }
 
 
 class TestReasoningNodeContract(NodeContractTestBase):
@@ -474,15 +477,15 @@ class TestAllNodesContractCompliance:
     def test_all_registered_nodes_inherit_basenode(self):
         """All registered nodes must inherit from BaseNode."""
         for node_type in NodeType:
-            node_class = NodeRegistry._registry.get(node_type)
-            assert node_class is not None
+            node_class = NodeRegistry._node_types.get(node_type)
+            assert node_class is not None, f"NodeType.{node_type.name} not registered"
             assert issubclass(node_class, BaseNode)
 
     def test_all_nodes_have_unique_types(self):
         """Each node class should be registered to exactly one type."""
         type_to_class = {}
         for node_type in NodeType:
-            node_class = NodeRegistry._registry.get(node_type)
+            node_class = NodeRegistry._node_types.get(node_type)
             if node_class in type_to_class.values():
                 pytest.fail(f"Node class {node_class} registered to multiple types")
             type_to_class[node_type] = node_class

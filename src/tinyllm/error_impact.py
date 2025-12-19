@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from tinyllm.error_aggregation import AggregatedError
-from tinyllm.errors import EnrichedError, ErrorCategory, ErrorSeverity
+from tinyllm.error_enrichment import EnrichedError, ErrorCategory, ErrorSeverity
 from tinyllm.logging import get_logger
 
 logger = get_logger(__name__, component="error_impact")

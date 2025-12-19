@@ -5,15 +5,13 @@ Tests are automatically skipped if Ollama is not available.
 """
 
 import asyncio
-
-import pytest
-
-pytestmark = pytest.mark.integration
 import os
 from typing import Optional
 
 import httpx
 import pytest
+
+pytestmark = pytest.mark.integration
 
 from tinyllm.models.client import OllamaClient, get_shared_client, close_all_clients
 from tinyllm.models.registry import ModelRegistry

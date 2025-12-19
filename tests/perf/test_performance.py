@@ -5,10 +5,6 @@ baselines and comparing against them.
 """
 
 import asyncio
-
-import pytest
-
-pytestmark = pytest.mark.perf
 import json
 import time
 from pathlib import Path
@@ -16,6 +12,8 @@ from typing import Any, Dict, List
 from unittest.mock import AsyncMock
 
 import pytest
+
+pytestmark = pytest.mark.perf
 
 from tinyllm.config.graph import NodeDefinition, NodeType
 from tinyllm.config.loader import Config
@@ -522,31 +520,3 @@ class TestRegressionChecks:
         if regressions:
             msg = "Performance regressions detected:\n" + "\n".join(regressions)
             pytest.fail(msg)
-
-
-# Pytest hooks for baseline management
-def pytest_addoption(parser):
-    """Add command-line options for performance testing."""
-    parser.addoption(
-        "--save-baseline",
-        action="store_true",
-        help="Save current performance metrics as baseline",
-    )
-    parser.addoption(
-        "--skip-regression",
-        action="store_true",
-        help="Skip regression checks",
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def save_baseline_if_requested(request):
-    """Save baseline after all tests if --save-baseline flag is set."""
-    yield
-
-    if request.config.getoption("--save-baseline"):
-        # Collect metrics from all tests
-        # (This is simplified - in practice you'd collect from all test instances)
-        metrics = PerformanceMetrics()
-        metrics.save_baseline()
-        print(f"\nSaved performance baseline to {BASELINE_FILE}")
