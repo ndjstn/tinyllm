@@ -1,0 +1,292 @@
+TinyLLM Identity Fix - File Manifest
+=====================================
+
+CREATED FILES:
+--------------
+
+1. /home/uri/Desktop/tinyllm/src/tinyllm/prompts/defaults.py
+   - Purpose: Default system prompts with proper identity
+   - Size: 374 lines
+   - Contains:
+     * ASSISTANT_IDENTITY - Core identity description
+     * CHAT_SYSTEM_PROMPT - Chat mode default
+     * TASK_SYSTEM_PROMPT - Task execution default
+     * ROUTER_SYSTEM_PROMPT - Router node default
+     * SPECIALIST_SYSTEM_PROMPT - Specialist node default
+     * JUDGE_SYSTEM_PROMPT - Evaluation node default
+     * get_chat_prompt() - Generate chat prompt with model info
+     * get_task_prompt() - Generate task-specific prompts
+     * get_identity_correction() - Auto-detect identity questions
+     * PromptConfig class - Configuration management
+     * IDENTITY_CORRECTIONS dict - Known assistant names
+     * Helper functions for configuration
+
+2. /home/uri/Desktop/tinyllm/docs/identity-system.md
+   - Purpose: Comprehensive documentation
+   - Size: 594 lines
+   - Sections:
+     * Overview and quick start
+     * Architecture details
+     * Configuration guide
+     * Integration instructions
+     * Best practices
+     * API reference with examples
+     * Troubleshooting
+     * Migration guide
+     * Future enhancements
+
+3. /home/uri/Desktop/tinyllm/IDENTITY_FIX.md
+   - Purpose: Quick reference for the fix
+   - Size: 427 lines
+   - Sections:
+     * Summary of changes
+     * Files changed
+     * Before/after comparison
+     * Example usage (CLI and Python)
+     * Key features
+     * API reference
+     * Testing instructions
+     * Troubleshooting
+     * Migration guide
+     * Support information
+
+4. /home/uri/Desktop/tinyllm/CHANGES_SUMMARY.md
+   - Purpose: Implementation summary
+   - Size: 385 lines
+   - Sections:
+     * Problem statement
+     * Solution implemented
+     * Files modified
+     * Key features
+     * Testing results
+     * Backward compatibility
+     * Benefits
+     * Performance impact
+     * Future enhancements
+     * Verification steps
+     * Statistics
+
+5. /home/uri/Desktop/tinyllm/test_identity.py
+   - Purpose: Test script for identity system
+   - Size: 97 lines
+   - Tests:
+     * ASSISTANT_IDENTITY content
+     * CHAT_SYSTEM_PROMPT format
+     * Model-specific prompts
+     * Identity correction for common queries
+     * Verification of no unwanted identities
+     * TinyLLM branding presence
+     * Custom configuration
+   - Run: PYTHONPATH=src:$PYTHONPATH python test_identity.py
+
+6. /home/uri/Desktop/tinyllm/verify_fix.py
+   - Purpose: Comprehensive verification script
+   - Size: 222 lines
+   - Checks:
+     * All imports work correctly
+     * Prompt content is correct
+     * Identity correction functions
+     * Configuration system works
+     * Task prompts generate correctly
+     * CLI integration successful
+   - Run: PYTHONPATH=src:$PYTHONPATH python verify_fix.py
+   - Result: 6/6 checks pass
+
+7. /home/uri/Desktop/tinyllm/IDENTITY_FIX_FILES.txt
+   - Purpose: This file - manifest of all changes
+   - Lists all created and modified files
+
+
+MODIFIED FILES:
+---------------
+
+1. /home/uri/Desktop/tinyllm/src/tinyllm/cli.py
+   - Lines modified: ~50 (chat command function)
+   - Changes:
+     * Import get_chat_prompt and get_identity_correction
+     * Add --system/-s option for custom prompts
+     * Display identity on startup
+     * Auto-detect identity questions
+     * Use get_chat_prompt() for default prompt
+     * Build full prompt with context
+   - Location: Lines 580-654
+
+2. /home/uri/Desktop/tinyllm/src/tinyllm/prompts/__init__.py
+   - Lines added: ~30
+   - Changes:
+     * Import from defaults module
+     * Export all identity-related functions and constants
+     * Add to __all__ list
+   - Location: Lines 10-44
+
+3. /home/uri/Desktop/tinyllm/src/tinyllm/__init__.py
+   - Lines added: ~30
+   - Changes:
+     * Import prompts exports
+     * Add prompts to package-level exports
+     * Update __all__ list
+   - Location: Lines 73-153
+
+
+FILE STATISTICS:
+----------------
+
+Created:
+  - Python code: 374 lines (defaults.py)
+  - Documentation: 1,406 lines total
+    * identity-system.md: 594 lines
+    * IDENTITY_FIX.md: 427 lines
+    * CHANGES_SUMMARY.md: 385 lines
+  - Tests: 319 lines total
+    * test_identity.py: 97 lines
+    * verify_fix.py: 222 lines
+  - Total created: 2,099 lines
+
+Modified:
+  - cli.py: ~50 lines changed
+  - prompts/__init__.py: ~30 lines added
+  - __init__.py: ~30 lines added
+  - Total modified: ~110 lines
+
+Total Project Impact: 2,209 lines
+
+
+KEY FILES BY PURPOSE:
+---------------------
+
+For Implementation:
+  - src/tinyllm/prompts/defaults.py (main implementation)
+  - src/tinyllm/cli.py (CLI integration)
+  - src/tinyllm/prompts/__init__.py (module exports)
+  - src/tinyllm/__init__.py (package exports)
+
+For Documentation:
+  - docs/identity-system.md (complete guide)
+  - IDENTITY_FIX.md (quick reference)
+  - CHANGES_SUMMARY.md (implementation summary)
+  - IDENTITY_FIX_FILES.txt (this file)
+
+For Testing:
+  - test_identity.py (feature tests)
+  - verify_fix.py (integration verification)
+
+
+VERIFICATION COMMANDS:
+----------------------
+
+1. Run feature tests:
+   $ PYTHONPATH=src:$PYTHONPATH python test_identity.py
+
+2. Run verification:
+   $ PYTHONPATH=src:$PYTHONPATH python verify_fix.py
+
+3. Test chat (requires Ollama):
+   $ tinyllm chat
+   > what is your name
+   > are you claude
+
+4. Check imports:
+   $ python -c "from tinyllm import get_chat_prompt, get_identity_correction; print('OK')"
+
+
+BACKWARD COMPATIBILITY:
+-----------------------
+
+All changes are backward compatible:
+
+✓ Existing graph YAML files work unchanged
+✓ Existing Python code works unchanged
+✓ CLI changes are additive (--system flag is optional)
+✓ Default behavior improved, custom behavior preserved
+✓ No breaking changes to any API
+
+
+INTEGRATION POINTS:
+-------------------
+
+The identity system integrates with:
+
+1. CLI chat command
+   - Uses get_chat_prompt() by default
+   - Auto-corrects identity questions
+   - Supports custom prompts via --system
+
+2. Model nodes (future)
+   - Can reference default prompts
+   - Model-aware prompt generation
+   - Task-specific prompts
+
+3. Memory system
+   - Identity corrections stored in conversation
+   - Context-aware prompt building
+
+4. Package imports
+   - Available at package level: from tinyllm import ...
+   - Available at module level: from tinyllm.prompts import ...
+
+
+DEPENDENCIES:
+-------------
+
+No new dependencies added. Uses only:
+- typing (standard library)
+- Optional type hints
+- Existing TinyLLM modules
+
+
+DEPLOYMENT NOTES:
+-----------------
+
+To deploy this fix:
+
+1. Ensure all created files are in place
+2. Modified files have been updated
+3. Run verification: python verify_fix.py
+4. Test with: tinyllm chat
+5. Check documentation: docs/identity-system.md
+
+No database migrations or configuration changes required.
+No service restarts needed (unless using metrics server).
+
+
+MAINTENANCE:
+------------
+
+To maintain the identity system:
+
+1. Update prompts in src/tinyllm/prompts/defaults.py
+2. Add new task types to get_task_prompt()
+3. Extend identity correction patterns in IDENTITY_CORRECTIONS
+4. Update documentation when prompts change
+5. Add tests for new features
+
+The system is designed to be easily extensible.
+
+
+VERSION INFO:
+-------------
+
+TinyLLM Version: 0.1.0
+Fix Version: 1.0
+Date: 2025-12-19
+Python: 3.10+
+
+
+LICENSE:
+--------
+
+Same license as TinyLLM project.
+
+
+CONTACT:
+--------
+
+For issues with this fix:
+1. Run verify_fix.py and test_identity.py
+2. Check docs/identity-system.md
+3. Review IDENTITY_FIX.md
+4. File issue with test output
+
+
+END OF FILE MANIFEST
+=====================
