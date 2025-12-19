@@ -179,10 +179,10 @@ async def test_get_metrics(scaler):
     """Test getting metrics."""
     metrics = scaler.get_metrics()
 
-    assert "total_instances" in metrics
-    assert "healthy_instances" in metrics
-    assert "avg_cpu_usage" in metrics
-    assert metrics["total_instances"] >= 0
+    assert hasattr(metrics, "total_instances")
+    assert hasattr(metrics, "healthy_instances")
+    assert hasattr(metrics, "cpu_utilization")
+    assert metrics.total_instances >= 0
 
 
 @pytest.mark.asyncio
