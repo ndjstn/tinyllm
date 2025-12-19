@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/ndjstn/tinyllm/tree/main/docs
+    about: Check our documentation first
+  - name: Discussions
+    url: https://github.com/ndjstn/tinyllm/discussions
+    about: Ask questions and discuss ideas
