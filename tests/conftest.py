@@ -250,3 +250,72 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         terminalreporter.write_line(
             f"Worker ID: {config.workerinput['workerid']}"
         )
+
+
+# Data generator fixtures
+
+
+@pytest.fixture
+def message_generator():
+    """Provide MessageGenerator for tests.
+
+    Returns:
+        MessageGenerator class.
+    """
+    from tests.generators import MessageGenerator
+    return MessageGenerator
+
+
+@pytest.fixture
+def node_generator():
+    """Provide NodeGenerator for tests.
+
+    Returns:
+        NodeGenerator class.
+    """
+    from tests.generators import NodeGenerator
+    return NodeGenerator
+
+
+@pytest.fixture
+def graph_generator():
+    """Provide GraphGenerator for tests.
+
+    Returns:
+        GraphGenerator class.
+    """
+    from tests.generators import GraphGenerator
+    return GraphGenerator
+
+
+@pytest.fixture
+def context_generator():
+    """Provide ContextGenerator for tests.
+
+    Returns:
+        ContextGenerator class.
+    """
+    from tests.generators import ContextGenerator
+    return ContextGenerator
+
+
+@pytest.fixture
+def response_generator():
+    """Provide ResponseGenerator for tests.
+
+    Returns:
+        ResponseGenerator class.
+    """
+    from tests.generators import ResponseGenerator
+    return ResponseGenerator
+
+
+@pytest.fixture
+def random_data_generator():
+    """Provide RandomDataGenerator for tests.
+
+    Returns:
+        RandomDataGenerator class.
+    """
+    from tests.generators import RandomDataGenerator
+    return RandomDataGenerator

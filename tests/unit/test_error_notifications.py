@@ -251,13 +251,13 @@ class TestNotificationManager:
         # Add multiple log channels with different thresholds
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannel.LOG,
+                channel=NotificationChannelEnum.LOG,
                 min_impact_level=ImpactLevel.HIGH,
             )
         )
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannel.LOG,
+                channel=NotificationChannelEnum.LOG,
                 min_impact_level=ImpactLevel.CRITICAL,
             )
         )
@@ -270,7 +270,7 @@ class TestWebhookNotificationChannel:
 
     def test_webhook_channel_creation(self):
         """Test creating webhook channel."""
-        config = NotificationConfig(channel=NotificationChannel.WEBHOOK)
+        config = NotificationConfig(channel=NotificationChannelEnum.WEBHOOK)
         webhook_config = WebhookConfig(url="https://example.com/webhook")
 
         channel = WebhookNotificationChannel(config, webhook_config)
@@ -279,7 +279,7 @@ class TestWebhookNotificationChannel:
     @pytest.mark.asyncio
     async def test_webhook_channel_cleanup(self):
         """Test webhook channel cleanup."""
-        config = NotificationConfig(channel=NotificationChannel.WEBHOOK)
+        config = NotificationConfig(channel=NotificationChannelEnum.WEBHOOK)
         webhook_config = WebhookConfig(url="https://example.com/webhook")
 
         channel = WebhookNotificationChannel(config, webhook_config)
@@ -311,7 +311,7 @@ class TestNotificationIntegration:
         manager = NotificationManager()
         manager.add_log_channel(
             NotificationConfig(
-                channel=NotificationChannel.LOG,
+                channel=NotificationChannelEnum.LOG,
                 min_impact_level=ImpactLevel.MEDIUM,
             )
         )

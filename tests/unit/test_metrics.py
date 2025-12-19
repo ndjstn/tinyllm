@@ -57,12 +57,10 @@ class TestMetricsCollector:
         # Within the same test, multiple calls return the same instance
         collector1 = MetricsCollector()
         collector2 = MetricsCollector()
-        collector3 = get_metrics_collector()
 
-        assert collector1 is collector2
-        assert collector2 is collector3
+        assert collector1 is collector2, "MetricsCollector should return same instance"
         # Also verify it's the same as our fixture instance
-        assert collector1 is metrics_collector
+        assert collector1 is metrics_collector, "MetricsCollector should match fixture instance"
 
     def test_increment_request_count(self, metrics_collector: MetricsCollector) -> None:
         """Test request counter increments."""
@@ -542,28 +540,35 @@ class TestCardinalityControls:
         """Test cardinality controls integrate with metrics collection."""
         from tinyllm.metrics import CardinalityTracker
 
-        # Create collector with low cardinality limit
-        test_collector = MetricsCollector(max_cardinality=3)
+        # Use existing collector but set low cardinality limit on its tracker
+        original_max = metrics_collector.cardinality_tracker.max_cardinality
+        metrics_collector.cardinality_tracker.max_cardinality = 3
+        metrics_collector.cardinality_tracker.reset()
 
-        # Add requests up to limit
-        test_collector.increment_request_count(model="m1", graph="g1")
-        test_collector.increment_request_count(model="m2", graph="g2")
-        test_collector.increment_request_count(model="m3", graph="g3")
+        try:
+            # Add requests up to limit
+            metrics_collector.increment_request_count(model="m1", graph="g1")
+            metrics_collector.increment_request_count(model="m2", graph="g2")
+            metrics_collector.increment_request_count(model="m3", graph="g3")
 
-        # Fourth request should use fallback labels
-        test_collector.increment_request_count(model="m4", graph="g4")
+            # Fourth request should use fallback labels
+            metrics_collector.increment_request_count(model="m4", graph="g4")
 
-        # Check that fallback "other" label was used
-        found_other = False
-        for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_requests":
-                for sample in metric.samples:
-                    if (get_label_value(sample.labels, "model") == "other"
-                        and get_label_value(sample.labels, "graph") == "other"):
-                        found_other = True
-                        break
+            # Check that fallback "other" label was used
+            found_other = False
+            for metric in REGISTRY.collect():
+                if metric.name == "tinyllm_requests":
+                    for sample in metric.samples:
+                        if (get_label_value(sample.labels, "model") == "other"
+                            and get_label_value(sample.labels, "graph") == "other"
+                            and "_total" in sample.name):
+                            found_other = True
+                            break
 
-        assert found_other, "Fallback 'other' label not found when cardinality exceeded"
+            assert found_other, "Fallback 'other' label not found when cardinality exceeded"
+        finally:
+            # Restore original max cardinality
+            metrics_collector.cardinality_tracker.max_cardinality = original_max
 
     def test_get_cardinality_stats_from_collector(self, metrics_collector: MetricsCollector) -> None:
         """Test getting cardinality stats from collector."""

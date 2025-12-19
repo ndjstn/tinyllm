@@ -260,17 +260,17 @@ class GraphGenerator:
 
         # Entry to first node
         edges.append(EdgeDefinition(
-            source="entry",
-            target=nodes[2].id if len(nodes) > 2 else "exit",
+            from_node="entry",
+            to_node=nodes[2].id if len(nodes) > 2 else "exit",
             condition=None,
         ))
 
         # Connect intermediate nodes
         for i in range(2, len(nodes) - 1):
-            target = nodes[i + 1].id if i + 1 < len(nodes) - 1 else "exit"
+            to_node = nodes[i + 1].id if i + 1 < len(nodes) - 1 else "exit"
             edges.append(EdgeDefinition(
-                source=nodes[i].id,
-                target=target,
+                from_node=nodes[i].id,
+                to_node=to_node,
                 condition=None,
             ))
 
@@ -334,11 +334,11 @@ class GraphGenerator:
         ]
 
         edges = [
-            EdgeDefinition(source="entry", target="router", condition=None),
-            EdgeDefinition(source="router", target="code_specialist", condition="code"),
-            EdgeDefinition(source="router", target="math_specialist", condition="math"),
-            EdgeDefinition(source="code_specialist", target="exit", condition=None),
-            EdgeDefinition(source="math_specialist", target="exit", condition=None),
+            EdgeDefinition(from_node="entry", to_node="router", condition=None),
+            EdgeDefinition(from_node="router", to_node="code_specialist", condition="code"),
+            EdgeDefinition(from_node="router", to_node="math_specialist", condition="math"),
+            EdgeDefinition(from_node="code_specialist", to_node="exit", condition=None),
+            EdgeDefinition(from_node="math_specialist", to_node="exit", condition=None),
         ]
 
         return GraphDefinition(
@@ -383,13 +383,13 @@ class GraphGenerator:
         ]
 
         edges = [
-            EdgeDefinition(source="entry", target="fanout", condition=None),
-            EdgeDefinition(source="fanout", target="worker1", condition=None),
-            EdgeDefinition(source="fanout", target="worker2", condition=None),
-            EdgeDefinition(source="fanout", target="worker3", condition=None),
-            EdgeDefinition(source="worker1", target="exit", condition=None),
-            EdgeDefinition(source="worker2", target="exit", condition=None),
-            EdgeDefinition(source="worker3", target="exit", condition=None),
+            EdgeDefinition(from_node="entry", to_node="fanout", condition=None),
+            EdgeDefinition(from_node="fanout", to_node="worker1", condition=None),
+            EdgeDefinition(from_node="fanout", to_node="worker2", condition=None),
+            EdgeDefinition(from_node="fanout", to_node="worker3", condition=None),
+            EdgeDefinition(from_node="worker1", to_node="exit", condition=None),
+            EdgeDefinition(from_node="worker2", to_node="exit", condition=None),
+            EdgeDefinition(from_node="worker3", to_node="exit", condition=None),
         ]
 
         return GraphDefinition(

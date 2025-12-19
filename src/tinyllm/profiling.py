@@ -674,7 +674,7 @@ class SlowQueryDetector:
                         duration_ms=round(duration_ms, 2),
                         threshold_ms=self.threshold_ms,
                         context=context,
-                        exception=exception_raised,
+                        has_exception=exception_raised,
                     )
 
     def get_slow_queries(
