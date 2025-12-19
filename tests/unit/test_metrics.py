@@ -74,14 +74,15 @@ class TestMetricsCollector:
         # Check that metric was recorded with exact value (tests isolation)
         found = False
         for metric in REGISTRY.collect():
-            if metric.name == "tinyllm_requests_total":
+            if metric.name == "tinyllm_requests":
                 for sample in metric.samples:
-                    if get_label_value(sample.labels, "model") == "test_model":
+                    if (get_label_value(sample.labels, "model") == "test_model"
+                        and "_total" in sample.name):
                         assert sample.value == 1, f"Expected 1, got {sample.value} (state pollution?)"
                         found = True
                         break
 
-        assert found, "Metric tinyllm_requests_total with model=test_model not found"
+        assert found, "Metric tinyllm_requests with model=test_model not found"
 
     def test_track_request_latency(self, metrics_collector: MetricsCollector) -> None:
         """Test request latency tracking."""
@@ -91,7 +92,7 @@ class TestMetricsCollector:
         ):
             time.sleep(0.01)  # 10ms delay
 
-        # Check that latency was recorded
+        # Check that latency was recorded with exact count (tests isolation)
         latency_recorded = False
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_request_latency_seconds":
@@ -99,12 +100,12 @@ class TestMetricsCollector:
                     if (
                         get_label_value(sample.labels, "model") == "test_model"
                         and "_count" in sample.name
-                        and sample.value > 0
                     ):
+                        assert sample.value == 1, f"Expected 1 request, got {sample.value} (state pollution?)"
                         latency_recorded = True
                         break
 
-        assert latency_recorded
+        assert latency_recorded, "Request latency not recorded"
 
     def test_active_requests_gauge(self, metrics_collector: MetricsCollector) -> None:
         """Test active requests gauge increments and decrements."""
@@ -139,18 +140,22 @@ class TestMetricsCollector:
             graph="test_graph",
         )
 
-        # Check that tokens were recorded
+        # Check that tokens were recorded with exact values (tests isolation)
         input_recorded = False
         output_recorded = False
 
         for metric in REGISTRY.collect():
             if metric.name == "tinyllm_tokens_input":
                 for sample in metric.samples:
-                    if get_label_value(sample.labels, "model") == "token_test" and sample.value >= 100:
+                    if (get_label_value(sample.labels, "model") == "token_test"
+                        and "_total" in sample.name):
+                        assert sample.value == 100, f"Expected 100 input tokens, got {sample.value}"
                         input_recorded = True
             elif metric.name == "tinyllm_tokens_output":
                 for sample in metric.samples:
-                    if get_label_value(sample.labels, "model") == "token_test" and sample.value >= 50:
+                    if (get_label_value(sample.labels, "model") == "token_test"
+                        and "_total" in sample.name):
+                        assert sample.value == 50, f"Expected 50 output tokens, got {sample.value}"
                         output_recorded = True
 
         assert input_recorded, "Input tokens not recorded"

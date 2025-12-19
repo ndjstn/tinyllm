@@ -403,3 +403,343 @@ class TestGlobalContext:
 
         # Should return same instance
         assert ctx1 is ctx2
+
+
+class TestFlameGraphGenerator:
+    """Test FlameGraphGenerator."""
+
+    def test_init(self):
+        """Test initializing flame graph generator."""
+        generator = FlameGraphGenerator()
+        assert generator._samples == []
+
+    def test_add_sample(self):
+        """Test adding stack samples."""
+        generator = FlameGraphGenerator()
+
+        stack1 = ["main", "function_a", "function_b"]
+        stack2 = ["main", "function_a", "function_c"]
+
+        generator.add_sample(1.0, stack1)
+        generator.add_sample(2.0, stack2)
+
+        assert len(generator._samples) == 2
+
+    def test_generate_folded_stacks(self):
+        """Test generating folded stack format."""
+        generator = FlameGraphGenerator()
+
+        # Add samples
+        generator.add_sample(1.0, ["main", "func_a", "func_b"])
+        generator.add_sample(2.0, ["main", "func_a", "func_b"])
+        generator.add_sample(3.0, ["main", "func_c"])
+
+        folded = generator.generate_folded_stacks()
+
+        assert "main;func_a;func_b 2" in folded
+        assert "main;func_c 1" in folded
+
+    def test_export_folded(self):
+        """Test exporting folded stacks to file."""
+        generator = FlameGraphGenerator()
+
+        generator.add_sample(1.0, ["main", "func_a"])
+        generator.add_sample(2.0, ["main", "func_a"])
+
+        with TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "flamegraph.txt"
+            generator.export_folded(filepath)
+
+            assert filepath.exists()
+
+            content = filepath.read_text()
+            assert "main;func_a" in content
+
+    def test_generate_from_profile(self):
+        """Test generating flame graph from cProfile."""
+        generator = FlameGraphGenerator()
+
+        # Create a simple profile
+        pr = cProfile.Profile()
+        pr.enable()
+
+        def test_func():
+            return sum(range(100))
+
+        test_func()
+        pr.disable()
+
+        folded = generator.generate_from_profile(pr)
+
+        # Should contain some profiling data
+        assert len(folded) > 0
+
+    def test_export_profile_folded(self):
+        """Test exporting cProfile as folded stacks."""
+        generator = FlameGraphGenerator()
+
+        # Create profile
+        pr = cProfile.Profile()
+        pr.enable()
+        _ = sum(range(1000))
+        pr.disable()
+
+        with TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "profile_flame.txt"
+            generator.export_profile_folded(pr, filepath)
+
+            assert filepath.exists()
+
+    def test_clear_samples(self):
+        """Test clearing samples."""
+        generator = FlameGraphGenerator()
+
+        generator.add_sample(1.0, ["main"])
+        generator.add_sample(2.0, ["main"])
+
+        assert len(generator._samples) == 2
+
+        generator.clear_samples()
+        assert len(generator._samples) == 0
+
+
+class TestSlowQueryDetector:
+    """Test SlowQueryDetector."""
+
+    def test_init(self):
+        """Test initializing detector."""
+        detector = SlowQueryDetector(threshold_ms=500.0)
+
+        assert detector.threshold_ms == 500.0
+        assert detector.enable_alerts is True
+        assert detector.track_history is True
+
+    def test_track_operation_fast(self):
+        """Test tracking fast operation."""
+        detector = SlowQueryDetector(threshold_ms=1000.0)
+
+        with detector.track_operation("fast_op"):
+            time.sleep(0.001)  # 1ms
+
+        # Should not be recorded as slow
+        slow_queries = detector.get_slow_queries()
+        assert len(slow_queries) == 0
+
+    def test_track_operation_slow(self):
+        """Test tracking slow operation."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        with detector.track_operation("slow_op"):
+            time.sleep(0.02)  # 20ms
+
+        # Should be recorded as slow
+        slow_queries = detector.get_slow_queries()
+        assert len(slow_queries) == 1
+        assert slow_queries[0]["operation"] == "slow_op"
+        assert slow_queries[0]["duration_ms"] >= 10.0
+
+    def test_track_operation_with_context(self):
+        """Test tracking with context."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        context = {"user_id": "123", "query": "SELECT *"}
+
+        with detector.track_operation("database_query", context=context):
+            time.sleep(0.02)
+
+        slow_queries = detector.get_slow_queries()
+        assert len(slow_queries) == 1
+        assert slow_queries[0]["context"] == context
+
+    def test_track_operation_with_exception(self):
+        """Test tracking operation that raises exception."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        with pytest.raises(ValueError):
+            with detector.track_operation("failing_op"):
+                time.sleep(0.02)
+                raise ValueError("Test error")
+
+        slow_queries = detector.get_slow_queries()
+        assert len(slow_queries) == 1
+        assert slow_queries[0]["exception"] is True
+
+    def test_get_slow_queries_filtered(self):
+        """Test getting filtered slow queries."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        with detector.track_operation("op_a"):
+            time.sleep(0.02)
+
+        with detector.track_operation("op_b"):
+            time.sleep(0.02)
+
+        with detector.track_operation("op_a"):
+            time.sleep(0.02)
+
+        # Get all
+        all_queries = detector.get_slow_queries()
+        assert len(all_queries) == 3
+
+        # Filter by operation
+        op_a_queries = detector.get_slow_queries(operation_name="op_a")
+        assert len(op_a_queries) == 2
+
+    def test_get_slow_queries_limited(self):
+        """Test getting limited slow queries."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        for i in range(5):
+            with detector.track_operation(f"op_{i}"):
+                time.sleep(0.02)
+
+        queries = detector.get_slow_queries(limit=3)
+        assert len(queries) == 3
+
+    def test_get_statistics(self):
+        """Test getting operation statistics."""
+        detector = SlowQueryDetector(threshold_ms=1000.0)
+
+        # Record multiple operations
+        with detector.track_operation("test_op"):
+            time.sleep(0.01)
+
+        with detector.track_operation("test_op"):
+            time.sleep(0.02)
+
+        stats = detector.get_statistics("test_op")
+
+        assert stats["operation"] == "test_op"
+        assert stats["count"] == 2
+        assert stats["avg_ms"] > 0
+        assert stats["max_ms"] >= stats["min_ms"]
+
+    def test_get_all_statistics(self):
+        """Test getting all statistics."""
+        detector = SlowQueryDetector(threshold_ms=1000.0)
+
+        with detector.track_operation("op_a"):
+            time.sleep(0.01)
+
+        with detector.track_operation("op_b"):
+            time.sleep(0.01)
+
+        all_stats = detector.get_statistics()
+
+        assert "op_a" in all_stats
+        assert "op_b" in all_stats
+        assert all_stats["op_a"]["count"] == 1
+        assert all_stats["op_b"]["count"] == 1
+
+    def test_set_threshold(self):
+        """Test updating threshold."""
+        detector = SlowQueryDetector(threshold_ms=100.0)
+
+        assert detector.threshold_ms == 100.0
+
+        detector.set_threshold(500.0)
+        assert detector.threshold_ms == 500.0
+
+    def test_clear_history(self):
+        """Test clearing slow query history."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        with detector.track_operation("slow_op"):
+            time.sleep(0.02)
+
+        assert len(detector.get_slow_queries()) == 1
+
+        detector.clear_history()
+        assert len(detector.get_slow_queries()) == 0
+
+    def test_clear_statistics(self):
+        """Test clearing statistics."""
+        detector = SlowQueryDetector(threshold_ms=1000.0)
+
+        with detector.track_operation("test_op"):
+            time.sleep(0.01)
+
+        assert len(detector.get_statistics()) > 0
+
+        detector.clear_statistics()
+        assert len(detector.get_statistics()) == 0
+
+    def test_export_report(self):
+        """Test exporting slow query report."""
+        detector = SlowQueryDetector(threshold_ms=10.0)
+
+        with detector.track_operation("slow_op"):
+            time.sleep(0.02)
+
+        with TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "slow_queries.json"
+            detector.export_report(filepath)
+
+            assert filepath.exists()
+
+            import json
+            with open(filepath) as f:
+                report = json.load(f)
+
+            assert report["threshold_ms"] == 10.0
+            assert report["slow_queries_count"] == 1
+            assert "statistics" in report
+
+    def test_max_history(self):
+        """Test max history limit."""
+        detector = SlowQueryDetector(threshold_ms=10.0, max_history=3)
+
+        # Add more than max_history slow queries
+        for i in range(5):
+            with detector.track_operation(f"op_{i}"):
+                time.sleep(0.02)
+
+        queries = detector.get_slow_queries()
+        # Should only keep last 3
+        assert len(queries) == 3
+
+    def test_disabled_alerts(self):
+        """Test detector with alerts disabled."""
+        detector = SlowQueryDetector(threshold_ms=10.0, enable_alerts=False)
+
+        # This should not log warning (hard to test, but shouldn't error)
+        with detector.track_operation("slow_op"):
+            time.sleep(0.02)
+
+        queries = detector.get_slow_queries()
+        assert len(queries) == 1
+
+    def test_disabled_history(self):
+        """Test detector with history disabled."""
+        detector = SlowQueryDetector(threshold_ms=10.0, track_history=False)
+
+        with detector.track_operation("slow_op"):
+            time.sleep(0.02)
+
+        # History should be empty
+        queries = detector.get_slow_queries()
+        assert len(queries) == 0
+
+        # But statistics should still be tracked
+        stats = detector.get_statistics("slow_op")
+        assert stats["count"] == 1
+
+
+class TestGlobalInstances:
+    """Test global instance functions."""
+
+    def test_get_flame_graph_generator(self):
+        """Test getting global flame graph generator."""
+        gen1 = get_flame_graph_generator()
+        gen2 = get_flame_graph_generator()
+
+        # Should return same instance
+        assert gen1 is gen2
+
+    def test_get_slow_query_detector(self):
+        """Test getting global slow query detector."""
+        det1 = get_slow_query_detector(threshold_ms=100.0)
+        det2 = get_slow_query_detector(threshold_ms=200.0)
+
+        # Should return same instance (threshold not updated)
+        assert det1 is det2

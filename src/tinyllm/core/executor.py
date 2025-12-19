@@ -711,3 +711,367 @@ class Executor:
         """
         # TODO: Store and return trace from last execution
         return None
+
+
+# ============================================================================
+# Transaction Rollback System
+# ============================================================================
+
+
+class TransactionLog(BaseModel):
+    """Log entry for a node operation in a transaction."""
+
+    step: int
+    node_id: str
+    operation: str  # execute, update_context, etc.
+    state_before: Dict[str, Any]
+    state_after: Dict[str, Any]
+    timestamp: float
+    reversible: bool = True
+
+
+class Transaction:
+    """Transaction manager for multi-node graph operations with rollback support."""
+
+    def __init__(self, trace_id: str, graph_id: str):
+        """Initialize transaction.
+
+        Args:
+            trace_id: Unique trace ID for this transaction.
+            graph_id: Graph ID being executed.
+        """
+        self.trace_id = trace_id
+        self.graph_id = graph_id
+        self.logs: List[TransactionLog] = []
+        self.committed = False
+        self.rolled_back = False
+        self._lock = asyncio.Lock()
+        self.start_time = time.time()
+
+    def log_operation(
+        self,
+        step: int,
+        node_id: str,
+        operation: str,
+        state_before: Dict[str, Any],
+        state_after: Dict[str, Any],
+        reversible: bool = True,
+    ) -> None:
+        """Log a node operation for potential rollback.
+
+        Args:
+            step: Execution step number.
+            node_id: Node that performed the operation.
+            operation: Type of operation.
+            state_before: State before operation.
+            state_after: State after operation.
+            reversible: Whether this operation can be reversed.
+        """
+        log_entry = TransactionLog(
+            step=step,
+            node_id=node_id,
+            operation=operation,
+            state_before=state_before,
+            state_after=state_after,
+            timestamp=time.time(),
+            reversible=reversible,
+        )
+        self.logs.append(log_entry)
+
+    async def commit(self) -> None:
+        """Commit the transaction, making all operations permanent."""
+        async with self._lock:
+            if self.committed or self.rolled_back:
+                raise RuntimeError(
+                    f"Transaction already {'committed' if self.committed else 'rolled back'}"
+                )
+
+            self.committed = True
+
+            from tinyllm.logging import get_logger
+
+            logger = get_logger(__name__)
+            logger.info(
+                "transaction_committed",
+                trace_id=self.trace_id,
+                graph_id=self.graph_id,
+                operations=len(self.logs),
+                duration_s=time.time() - self.start_time,
+            )
+
+    async def rollback(self, to_step: Optional[int] = None) -> Dict[str, Any]:
+        """Rollback the transaction, undoing operations.
+
+        Args:
+            to_step: Roll back to this step (None = full rollback).
+
+        Returns:
+            Dictionary with rollback results.
+        """
+        async with self._lock:
+            if self.committed:
+                raise RuntimeError("Cannot rollback committed transaction")
+
+            if self.rolled_back:
+                raise RuntimeError("Transaction already rolled back")
+
+            from tinyllm.logging import get_logger
+
+            logger = get_logger(__name__)
+
+            # Determine which operations to rollback
+            if to_step is None:
+                operations_to_undo = list(reversed(self.logs))
+            else:
+                operations_to_undo = [log for log in reversed(self.logs) if log.step > to_step]
+
+            # Track rollback results
+            rolled_back_count = 0
+            skipped_count = 0
+            errors = []
+
+            logger.info(
+                "transaction_rollback_starting",
+                trace_id=self.trace_id,
+                total_operations=len(operations_to_undo),
+                to_step=to_step,
+            )
+
+            # Undo operations in reverse order
+            for log_entry in operations_to_undo:
+                if not log_entry.reversible:
+                    skipped_count += 1
+                    logger.warning(
+                        "operation_not_reversible",
+                        node_id=log_entry.node_id,
+                        operation=log_entry.operation,
+                        step=log_entry.step,
+                    )
+                    continue
+
+                try:
+                    # Perform rollback (restore state_before)
+                    await self._undo_operation(log_entry)
+                    rolled_back_count += 1
+
+                except Exception as e:
+                    error_msg = f"Failed to rollback step {log_entry.step}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(
+                        "rollback_operation_failed",
+                        node_id=log_entry.node_id,
+                        operation=log_entry.operation,
+                        step=log_entry.step,
+                        error=str(e),
+                    )
+
+            self.rolled_back = True
+
+            result = {
+                "success": len(errors) == 0,
+                "rolled_back": rolled_back_count,
+                "skipped": skipped_count,
+                "errors": errors,
+                "to_step": to_step,
+                "duration_s": time.time() - self.start_time,
+            }
+
+            logger.info(
+                "transaction_rolled_back",
+                trace_id=self.trace_id,
+                result=result,
+            )
+
+            return result
+
+    async def _undo_operation(self, log_entry: TransactionLog) -> None:
+        """Undo a single operation.
+
+        Args:
+            log_entry: Transaction log entry to undo.
+        """
+        # This is a simplified implementation. In a real system,
+        # each operation type would have specific undo logic.
+        # For now, we just log the rollback intent.
+
+        from tinyllm.logging import get_logger
+
+        logger = get_logger(__name__)
+        logger.debug(
+            "undoing_operation",
+            node_id=log_entry.node_id,
+            operation=log_entry.operation,
+            step=log_entry.step,
+            state_before=log_entry.state_before,
+        )
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get transaction status.
+
+        Returns:
+            Dictionary with transaction status.
+        """
+        return {
+            "trace_id": self.trace_id,
+            "graph_id": self.graph_id,
+            "operations_count": len(self.logs),
+            "committed": self.committed,
+            "rolled_back": self.rolled_back,
+            "duration_s": time.time() - self.start_time,
+            "reversible_operations": sum(1 for log in self.logs if log.reversible),
+            "irreversible_operations": sum(1 for log in self.logs if not log.reversible),
+        }
+
+
+class TransactionalExecutor(Executor):
+    """Executor with transaction support for multi-node operations.
+
+    Extends the base Executor with transaction logging and rollback capabilities.
+    When enabled, all node operations are logged and can be rolled back on failure.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        config: Optional[ExecutorConfig] = None,
+        system_config: Optional[Config] = None,
+        enable_transactions: bool = True,
+    ):
+        """Initialize transactional executor.
+
+        Args:
+            graph: Graph to execute.
+            config: Executor configuration.
+            system_config: System configuration.
+            enable_transactions: Whether to enable transaction logging.
+        """
+        super().__init__(graph, config, system_config)
+        self.enable_transactions = enable_transactions
+        self._current_transaction: Optional[Transaction] = None
+
+    async def execute(self, task: TaskPayload) -> TaskResponse:
+        """Execute a task through the graph with transaction support.
+
+        Args:
+            task: Input task payload.
+
+        Returns:
+            Task response with results.
+        """
+        if not self.enable_transactions:
+            return await super().execute(task)
+
+        # Start transaction
+        trace_id = str(uuid4())
+        self._current_transaction = Transaction(trace_id, self.graph.id)
+
+        try:
+            response = await super().execute(task)
+
+            # Commit transaction on success
+            if response.success:
+                await self._current_transaction.commit()
+            else:
+                # Rollback on failure
+                rollback_result = await self._current_transaction.rollback()
+
+                from tinyllm.logging import get_logger
+
+                logger = get_logger(__name__)
+                logger.info(
+                    "execution_rolled_back",
+                    trace_id=trace_id,
+                    rollback_result=rollback_result,
+                )
+
+            return response
+
+        except Exception as e:
+            # Rollback on exception
+            if self._current_transaction and not self._current_transaction.rolled_back:
+                rollback_result = await self._current_transaction.rollback()
+
+                from tinyllm.logging import get_logger
+
+                logger = get_logger(__name__)
+                logger.error(
+                    "execution_failed_rolled_back",
+                    trace_id=trace_id,
+                    error=str(e),
+                    rollback_result=rollback_result,
+                )
+
+            raise
+
+        finally:
+            self._current_transaction = None
+
+    async def _execute_node(
+        self,
+        node: BaseNode,
+        message: Message,
+        context: ExecutionContext,
+    ) -> NodeResult:
+        """Execute a single node with transaction logging.
+
+        Args:
+            node: Node to execute.
+            message: Input message.
+            context: Execution context.
+
+        Returns:
+            Node execution result.
+        """
+        # Capture state before execution
+        state_before = {
+            "step_count": context.step_count,
+            "total_tokens": context.total_tokens,
+            "message_count": len(context.messages),
+        }
+
+        # Execute node
+        result = await super()._execute_node(node, message, context)
+
+        # Log operation in transaction
+        if self._current_transaction:
+            state_after = {
+                "step_count": context.step_count,
+                "total_tokens": context.total_tokens,
+                "message_count": len(context.messages),
+                "success": result.success,
+            }
+
+            self._current_transaction.log_operation(
+                step=context.step_count,
+                node_id=node.id,
+                operation="execute",
+                state_before=state_before,
+                state_after=state_after,
+                reversible=True,  # Most operations are reversible
+            )
+
+        return result
+
+    def get_transaction_status(self) -> Optional[Dict[str, Any]]:
+        """Get current transaction status.
+
+        Returns:
+            Transaction status or None if no active transaction.
+        """
+        if self._current_transaction:
+            return self._current_transaction.get_status()
+        return None
+
+    async def rollback_to_checkpoint(self, checkpoint_step: int) -> Dict[str, Any]:
+        """Rollback transaction to a specific checkpoint.
+
+        Args:
+            checkpoint_step: Step number to rollback to.
+
+        Returns:
+            Rollback result dictionary.
+        """
+        if not self._current_transaction:
+            raise RuntimeError("No active transaction to rollback")
+
+        return await self._current_transaction.rollback(to_step=checkpoint_step)

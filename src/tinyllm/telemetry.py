@@ -449,19 +449,28 @@ def get_correlation_id() -> Optional[str]:
     Returns:
         Current correlation ID, or None if not set.
     """
-    # First try to get from baggage
-    correlation_id = get_baggage(_correlation_id_key)
-    if correlation_id:
-        return correlation_id
-
-    # Fall back to trace ID if available
+    # First try to get from baggage (requires telemetry)
     if is_telemetry_enabled():
+        correlation_id = get_baggage(_correlation_id_key)
+        if correlation_id:
+            return correlation_id
+
+        # Fall back to trace ID if available
         span = trace.get_current_span()
         if span and span.is_recording():
             span_context = span.get_span_context()
             if span_context and span_context.is_valid:
                 # Use trace ID as correlation ID if not explicitly set
                 return format(span_context.trace_id, "032x")
+
+    # Try to get from logging context as fallback
+    try:
+        import structlog
+        context = structlog.contextvars.get_contextvars()
+        if "correlation_id" in context:
+            return context["correlation_id"]
+    except Exception:
+        pass
 
     return None
 
