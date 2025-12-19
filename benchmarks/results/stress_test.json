@@ -1,0 +1,321 @@
+{
+  "results": [
+    {
+      "query": "What is 5 + 3?",
+      "category": "math_complexity",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 2633,
+      "response_length": 705,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:19.274662"
+    },
+    {
+      "query": "What is 12 * 4?",
+      "category": "math_complexity",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 3664,
+      "response_length": 782,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:22.956863"
+    },
+    {
+      "query": "Calculate 15% of 240, then add 50",
+      "category": "math_complexity",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 4196,
+      "response_length": 755,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:27.170743"
+    },
+    {
+      "query": "If x = 5, what is 3x\u00b2 + 2x - 7?",
+      "category": "math_complexity",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 3811,
+      "response_length": 640,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:31.003775"
+    },
+    {
+      "query": "Solve the system: 2x + 3y = 12 and 4x - y = 5",
+      "category": "math_complexity",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 8038,
+      "response_length": 1691,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:39.059808"
+    },
+    {
+      "query": "Find the derivative of f(x) = x\u00b3sin(x) + e^x",
+      "category": "math_complexity",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 6281,
+      "response_length": 1332,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:45.373933"
+    },
+    {
+      "query": "Prove that the sum of the first n odd numbers equals n\u00b2. Then use this to calculate 1+3+5+...+99.",
+      "category": "math_complexity",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 7652,
+      "response_length": 1514,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:32:53.046476"
+    },
+    {
+      "query": "A ball is dropped from 100m. Each bounce reaches 60% of the previous height. Calculate total distanc...",
+      "category": "math_complexity",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 8079,
+      "response_length": 1903,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:33:01.144150"
+    },
+    {
+      "query": "Write a function to add two numbers",
+      "category": "code_complexity",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 6349,
+      "response_length": 2006,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:07.510486"
+    },
+    {
+      "query": "Write a function to check if a number is even",
+      "category": "code_complexity",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 5709,
+      "response_length": 1684,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:13.240819"
+    },
+    {
+      "query": "Write a function to find all prime numbers up to n using the Sieve of Eratosthenes",
+      "category": "code_complexity",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 8070,
+      "response_length": 2508,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:21.331603"
+    },
+    {
+      "query": "Implement a binary search function with error handling",
+      "category": "code_complexity",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 10090,
+      "response_length": 3471,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:31.435670"
+    },
+    {
+      "query": "Implement a trie data structure with insert, search, and autocomplete methods",
+      "category": "code_complexity",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 12091,
+      "response_length": 4207,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:43.551108"
+    },
+    {
+      "query": "Write a function to solve the N-Queens problem and return all valid board configurations",
+      "category": "code_complexity",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 11102,
+      "response_length": 3760,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:33:54.691420"
+    },
+    {
+      "query": "Implement a basic regex engine that supports . * + ? and character classes [abc]",
+      "category": "code_complexity",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 21361,
+      "response_length": 8122,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:34:16.069714"
+    },
+    {
+      "query": "Write a function to evaluate mathematical expressions with parentheses, supporting +, -, *, /, and ^...",
+      "category": "code_complexity",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 10243,
+      "response_length": 4474,
+      "error": null,
+      "quality_score": 0.9,
+      "timestamp": "2025-12-18T21:34:26.329344"
+    },
+    {
+      "query": "If all cats are mammals and Fluffy is a cat, what is Fluffy?",
+      "category": "reasoning_chains",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 952,
+      "response_length": 107,
+      "error": null,
+      "quality_score": 0.8,
+      "timestamp": "2025-12-18T21:34:27.295571"
+    },
+    {
+      "query": "John is taller than Mike. Mike is taller than Sam. Who is shortest?",
+      "category": "reasoning_chains",
+      "difficulty": "easy",
+      "success": true,
+      "latency_ms": 3567,
+      "response_length": 958,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:34:30.881800"
+    },
+    {
+      "query": "A farmer has chickens and cows. He counts 50 heads and 140 legs. How many of each animal does he hav...",
+      "category": "reasoning_chains",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 5595,
+      "response_length": 1336,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:34:36.494630"
+    },
+    {
+      "query": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 ...",
+      "category": "reasoning_chains",
+      "difficulty": "medium",
+      "success": true,
+      "latency_ms": 5014,
+      "response_length": 1434,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:34:41.527483"
+    },
+    {
+      "query": "Three people (A, B, C) need to cross a bridge at night with one flashlight. A takes 1 min, B takes 2...",
+      "category": "reasoning_chains",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 9294,
+      "response_length": 2669,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:34:50.839847"
+    },
+    {
+      "query": "You have 12 balls, one is different weight. Using a balance scale exactly 3 times, identify the odd ...",
+      "category": "reasoning_chains",
+      "difficulty": "hard",
+      "success": true,
+      "latency_ms": 11558,
+      "response_length": 2957,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:35:02.414680"
+    },
+    {
+      "query": "100 prisoners will be lined up, each wearing a red or blue hat. Each can see all hats in front but n...",
+      "category": "reasoning_chains",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 12383,
+      "response_length": 4389,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:35:14.841153"
+    },
+    {
+      "query": "A king wants to identify a poisoned wine bottle among 1000 bottles using prisoners as testers. Poiso...",
+      "category": "reasoning_chains",
+      "difficulty": "extreme",
+      "success": true,
+      "latency_ms": 9958,
+      "response_length": 2505,
+      "error": null,
+      "quality_score": 0.8999999999999999,
+      "timestamp": "2025-12-18T21:35:24.817587"
+    }
+  ],
+  "analysis": {
+    "total_tests": 24,
+    "overall_success_rate": 1.0,
+    "by_category": {
+      "math_complexity": {
+        "total": 8,
+        "success_rate": 1.0,
+        "avg_latency": 5544.25,
+        "avg_quality": 0.8999999999999999
+      },
+      "reasoning_chains": {
+        "total": 8,
+        "success_rate": 1.0,
+        "avg_latency": 7290.125,
+        "avg_quality": 0.8875
+      },
+      "code_complexity": {
+        "total": 8,
+        "success_rate": 1.0,
+        "avg_latency": 10626.875,
+        "avg_quality": 0.9
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "total": 6,
+        "success_rate": 1.0,
+        "avg_latency": 3812.3333333333335,
+        "avg_quality": 0.8833333333333333
+      },
+      "medium": {
+        "total": 6,
+        "success_rate": 1.0,
+        "avg_latency": 6129.333333333333,
+        "avg_quality": 0.8999999999999999
+      },
+      "hard": {
+        "total": 6,
+        "success_rate": 1.0,
+        "avg_latency": 9727.333333333334,
+        "avg_quality": 0.8999999999999999
+      },
+      "extreme": {
+        "total": 6,
+        "success_rate": 1.0,
+        "avg_latency": 11612.666666666666,
+        "avg_quality": 0.8999999999999999
+      }
+    },
+    "breaking_points": [],
+    "quality_analysis": {}
+  },
+  "timestamp": "2025-12-18T21:35:24.818220"
+}
