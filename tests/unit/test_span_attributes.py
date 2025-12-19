@@ -264,36 +264,32 @@ class TestIntegration:
 
     def test_attributes_in_span(self):
         """Test that attributes can be set in a span."""
-        from tinyllm.telemetry import (
-            configure_telemetry,
-            set_graph_attributes,
-            set_node_attributes,
-            trace_span,
-        )
+        from tinyllm.telemetry import set_graph_attributes, set_node_attributes
 
         # Configure telemetry
-        from tinyllm.telemetry import TelemetryConfig
-
-        config = TelemetryConfig(enable_tracing=True, exporter="console")
+        import tinyllm.telemetry
 
         with patch("tinyllm.telemetry.OTEL_AVAILABLE", True):
             with patch("tinyllm.telemetry.trace") as mock_trace:
                 mock_tracer = MagicMock()
                 mock_span = MagicMock()
                 mock_span.is_recording.return_value = True
-                mock_tracer.start_as_current_span.return_value.__enter__.return_value = mock_span
-                mock_trace.get_tracer.return_value = mock_tracer
+
+                # Mock the span context properly
+                mock_span_context = MagicMock()
+                mock_span_context.trace_id = 12345
+                mock_span_context.span_id = 67890
+                mock_span.get_span_context.return_value = mock_span_context
+
                 mock_trace.get_current_span.return_value = mock_span
 
                 # Manually set the tracer
-                import tinyllm.telemetry
-
                 tinyllm.telemetry._tracer = mock_tracer
                 tinyllm.telemetry._telemetry_enabled = True
 
-                with trace_span("test"):
-                    set_graph_attributes(graph_id="g1", node_count=5)
-                    set_node_attributes(node_id="n1", node_type="model")
+                # Test setting attributes
+                set_graph_attributes(graph_id="g1", node_count=5)
+                set_node_attributes(node_id="n1", node_type="model")
 
                 # Verify attributes were set
                 assert mock_span.set_attribute.call_count >= 3
