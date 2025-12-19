@@ -1,0 +1,113 @@
+# Failure Pattern Analyzer Prompt
+# Used to analyze and categorize failure patterns
+
+id: expansion/failure_analyzer
+name: Failure Pattern Analyzer
+version: "1.0.0"
+description: Analyzes grading failures to identify patterns and root causes
+
+model_requirements:
+  min_tier: 2
+  capabilities:
+    - reasoning
+    - structured_output
+
+system_prompt: |
+  You are an expert at analyzing AI system failures to identify patterns and root causes.
+
+  Your role is to:
+  1. Analyze a set of failure cases from a node
+  2. Identify common patterns and categories
+  3. Determine the most likely root causes
+  4. Suggest potential fixes or improvements
+
+  Failure Categories:
+  - task_complexity: Task was too complex for the model
+  - domain_mismatch: Task was outside the node's expertise
+  - context_overflow: Input exceeded context limits
+  - tool_missing: Required tools were not available
+  - instruction_unclear: Prompts were ambiguous
+  - model_limitation: Model has fundamental capability limits
+
+  Always respond with valid JSON.
+
+user_template: |
+  Please analyze the following failure cases from node "{{ node_id }}".
+
+  ## Node Information
+  - Model: {{ model | default('unknown') }}
+  - Domain: {{ domain | default('general') }}
+  - Tools: {{ tools | default([]) | join(', ') }}
+
+  ## Failure Cases
+  {% for failure in failures %}
+  ### Failure {{ loop.index }}
+  - Task: {{ failure.task }}
+  - Response: {{ failure.response[:200] }}...
+  - Grade: {{ failure.grade }}
+  - Feedback: {{ failure.feedback }}
+  {% endfor %}
+
+  ## Analysis Request
+  Identify:
+  1. Common patterns across failures
+  2. Primary failure categories
+  3. Potential root causes
+  4. Suggested improvements
+
+  Respond in JSON format:
+  ```json
+  {
+      "patterns": [
+          {"id": "pattern_1", "description": "...", "frequency": 0.5}
+      ],
+      "primary_categories": ["task_complexity", "domain_mismatch"],
+      "root_causes": [
+          {"cause": "...", "confidence": 0.8, "evidence": "..."}
+      ],
+      "suggestions": [
+          {"type": "prompt_refinement", "description": "...", "priority": "high"}
+      ]
+  }
+  ```
+
+output_schema:
+  type: object
+  properties:
+    patterns:
+      type: array
+    primary_categories:
+      type: array
+    root_causes:
+      type: array
+    suggestions:
+      type: array
+
+examples:
+  - input:
+      node_id: "math_solver"
+      model: "qwen2.5:1.5b"
+      domain: "mathematics"
+      failures:
+        - task: "Solve the integral of x^2 * sin(x)"
+          response: "I think the answer is x^3/3 * cos(x)"
+          grade: 0.3
+          feedback: "Integration by parts not applied correctly"
+        - task: "Find the derivative of e^(x^2)"
+          response: "The derivative is e^(x^2)"
+          grade: 0.4
+          feedback: "Chain rule not applied"
+    output: |
+      {
+        "patterns": [
+          {"id": "calculus_errors", "description": "Errors in calculus operations", "frequency": 1.0}
+        ],
+        "primary_categories": ["task_complexity", "model_limitation"],
+        "root_causes": [
+          {"cause": "Model lacks calculus procedure knowledge", "confidence": 0.9, "evidence": "Both errors involve missed rules (integration by parts, chain rule)"}
+        ],
+        "suggestions": [
+          {"type": "sub_routing", "description": "Create specialized calculus node with step-by-step prompting", "priority": "high"},
+          {"type": "model_upgrade", "description": "Consider larger model with better math reasoning", "priority": "medium"}
+        ]
+      }

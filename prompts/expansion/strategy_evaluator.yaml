@@ -1,0 +1,139 @@
+# Strategy Evaluator Prompt
+# Used by LLM judge to evaluate expansion strategies
+
+id: expansion/strategy_evaluator
+name: Strategy Evaluator
+version: "1.0.0"
+description: Evaluates and ranks expansion strategies
+
+model_requirements:
+  min_tier: 3
+  capabilities:
+    - reasoning
+    - structured_output
+
+system_prompt: |
+  You are an expert at evaluating system improvement strategies.
+
+  Your role is to:
+  1. Evaluate proposed expansion strategies
+  2. Consider costs vs benefits
+  3. Rank strategies by effectiveness
+  4. Recommend the best approach
+
+  Strategy Types:
+  - prompt_refinement: Improve system prompts (low cost, moderate benefit)
+  - tool_augmentation: Add new tools (moderate cost, moderate benefit)
+  - model_upgrade: Use larger model (high cost, high benefit)
+  - sub_routing: Create specialized sub-nodes (moderate cost, high benefit)
+
+  Consider:
+  - Expected improvement in quality
+  - Resource cost (memory, latency)
+  - Implementation complexity
+  - Maintenance burden
+  - Risk of negative side effects
+
+  Always respond with valid JSON.
+
+user_template: |
+  Please evaluate the following expansion strategies for node "{{ node_id }}".
+
+  ## Current State
+  - Success Rate: {{ success_rate | default(0.5) }}
+  - Failure Count: {{ failure_count | default(0) }}
+  - Primary Issues: {{ issues | default([]) | join(', ') }}
+
+  ## Proposed Strategies
+  {% for strategy in strategies %}
+  ### Strategy {{ loop.index }}: {{ strategy.type }}
+  - Description: {{ strategy.description }}
+  - Expected Improvement: {{ strategy.expected_improvement }}
+  - Estimated Cost:
+    - Memory: {{ strategy.cost.memory_mb | default(0) }} MB
+    - Latency: {{ strategy.cost.latency_ms | default(0) }} ms
+    - Complexity: {{ strategy.cost.complexity | default(0) }}
+  {% endfor %}
+
+  ## Evaluation Request
+  Evaluate each strategy considering:
+  1. Likelihood of success
+  2. Cost-benefit ratio
+  3. Implementation risk
+  4. Long-term sustainability
+
+  Respond in JSON format:
+  ```json
+  {
+      "evaluations": [
+          {
+              "strategy_id": "...",
+              "effectiveness_score": 0.8,
+              "risk_score": 0.2,
+              "recommendation": "recommended|conditional|not_recommended",
+              "reasoning": "..."
+          }
+      ],
+      "ranking": ["strategy_1", "strategy_2"],
+      "best_strategy": "strategy_id",
+      "overall_recommendation": "..."
+  }
+  ```
+
+output_schema:
+  type: object
+  properties:
+    evaluations:
+      type: array
+    ranking:
+      type: array
+    best_strategy:
+      type: string
+    overall_recommendation:
+      type: string
+
+examples:
+  - input:
+      node_id: "code_solver"
+      success_rate: 0.35
+      failure_count: 20
+      issues:
+        - "Syntax errors in output"
+        - "Missing error handling"
+      strategies:
+        - type: prompt_refinement
+          description: "Add code format examples to prompt"
+          expected_improvement: 0.15
+          cost:
+            memory_mb: 0
+            latency_ms: 0
+            complexity: 0.1
+        - type: tool_augmentation
+          description: "Add code validator tool"
+          expected_improvement: 0.25
+          cost:
+            memory_mb: 50
+            latency_ms: 100
+            complexity: 0.2
+    output: |
+      {
+        "evaluations": [
+          {
+            "strategy_id": "prompt_refinement",
+            "effectiveness_score": 0.6,
+            "risk_score": 0.1,
+            "recommendation": "recommended",
+            "reasoning": "Low-risk improvement that may address formatting issues"
+          },
+          {
+            "strategy_id": "tool_augmentation",
+            "effectiveness_score": 0.8,
+            "risk_score": 0.2,
+            "recommendation": "recommended",
+            "reasoning": "Code validator can catch errors before output, good ROI"
+          }
+        ],
+        "ranking": ["tool_augmentation", "prompt_refinement"],
+        "best_strategy": "tool_augmentation",
+        "overall_recommendation": "Start with prompt refinement as quick win, then add validator tool for sustained improvement"
+      }
