@@ -327,8 +327,10 @@ class TestFactoryReproducibility:
         nodes = [NodeDefinitionFactory() for _ in range(10)]
         node_ids = [n.id for n in nodes]
 
-        # Should have sequential numbering
-        assert "node.0" in node_ids or "node.1" in node_ids
+        # All IDs should be unique
+        assert len(set(node_ids)) == 10
+        # Should all start with "node."
+        assert all(nid.startswith("node.") for nid in node_ids)
 
     def test_custom_attributes_override_defaults(self):
         """Test that custom attributes override factory defaults."""

@@ -255,6 +255,7 @@ class GraphDefinitionFactory(Factory):
             nodes=[entry, model, exit_node],
             edges=edges,
             entry_points=[entry.id],
+            exit_points=[exit_node.id],
             **kwargs
         )
 
@@ -301,6 +302,7 @@ class GraphDefinitionFactory(Factory):
             nodes=[entry, router, code_node, math_node, general_node, exit_node],
             edges=edges,
             entry_points=[entry.id],
+            exit_points=[exit_node.id],
             **kwargs
         )
 
@@ -355,6 +357,7 @@ class GraphDefinitionFactory(Factory):
             ],
             edges=edges,
             entry_points=[entry.id],
+            exit_points=[exit_success.id, exit_fallback.id],
             **kwargs
         )
 
@@ -441,11 +444,12 @@ try:
     from hypothesis import strategies as st
 
     # Basic types
+    # Pattern: ^[a-z][a-z0-9_\.]*$
     node_id_strategy = st.text(
-        alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters="_"),
+        alphabet="abcdefghijklmnopqrstuvwxyz0123456789_.",
         min_size=1,
         max_size=50
-    ).filter(lambda s: s[0].isalpha())
+    ).filter(lambda s: s and s[0].islower() and s[0].isalpha())
 
     # Node type strategy
     node_type_strategy = st.sampled_from(list(NodeType))

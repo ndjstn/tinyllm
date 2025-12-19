@@ -10,7 +10,8 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from tinyllm.core.context import ExecutionContext
-from tinyllm.core.message import Message, NodeResult
+from tinyllm.core.message import Message
+from tinyllm.core.node import NodeResult
 from tinyllm.logging import get_logger
 
 logger = get_logger(__name__, component="streaming")

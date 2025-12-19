@@ -35,16 +35,16 @@ def simple_graph_def():
         version="1.0.0",
         name="Test Graph",
         nodes=[
-            NodeDefinition(id="entry", type=NodeType.TRANSFORM, name="Entry"),
+            NodeDefinition(id="entry", type=NodeType.ENTRY, name="Entry"),
             NodeDefinition(id="process", type=NodeType.TRANSFORM, name="Process"),
-            NodeDefinition(id="exit", type=NodeType.TRANSFORM, name="Exit"),
+            NodeDefinition(id="exit_node", type=NodeType.EXIT, name="Exit"),
         ],
         edges=[
             {"from_node": "entry", "to_node": "process"},
-            {"from_node": "process", "to_node": "exit"},
+            {"from_node": "process", "to_node": "exit_node"},
         ],
         entry_points=["entry"],
-        exit_points=["exit"],
+        exit_points=["exit_node"],
     )
 
 
@@ -491,23 +491,14 @@ def test_transaction_get_status():
     assert status["irreversible_operations"] == 1
 
 
-def test_transactional_executor_creation():
+def test_transactional_executor_creation(simple_graph_def):
     """Test creating a transactional executor."""
     from tinyllm.nodes.transform import TransformNode
 
-    graph_def = GraphDefinition(
-        id="test_graph",
-        version="1.0.0",
-        name="Test Graph",
-        nodes=[
-            NodeDefinition(id="entry", type=NodeType.TRANSFORM),
-        ],
-        entry_points=["entry"],
-        exit_points=["entry"],
-    )
-
-    graph = Graph(graph_def)
-    graph.add_node(TransformNode(id="entry"))
+    # Use simpler minimal graph
+    graph = Graph(simple_graph_def)
+    for node_def in simple_graph_def.nodes:
+        graph.add_node(TransformNode(id=node_def.id, name=node_def.name))
 
     executor = TransactionalExecutor(graph, enable_transactions=True)
 
@@ -515,23 +506,14 @@ def test_transactional_executor_creation():
     assert executor._current_transaction is None
 
 
-def test_transactional_executor_get_status():
+def test_transactional_executor_get_status(simple_graph_def):
     """Test getting transaction status from executor."""
     from tinyllm.nodes.transform import TransformNode
 
-    graph_def = GraphDefinition(
-        id="test_graph",
-        version="1.0.0",
-        name="Test Graph",
-        nodes=[
-            NodeDefinition(id="entry", type=NodeType.TRANSFORM),
-        ],
-        entry_points=["entry"],
-        exit_points=["entry"],
-    )
-
-    graph = Graph(graph_def)
-    graph.add_node(TransformNode(id="entry"))
+    # Use simpler minimal graph
+    graph = Graph(simple_graph_def)
+    for node_def in simple_graph_def.nodes:
+        graph.add_node(TransformNode(id=node_def.id, name=node_def.name))
 
     executor = TransactionalExecutor(graph)
 

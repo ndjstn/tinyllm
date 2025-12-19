@@ -111,14 +111,13 @@ async def test_simple_generation(ollama_client):
 
     prompt = "Say hello in one word."
     response = await ollama_client.generate(
-        model=TEST_MODEL,
         prompt=prompt,
-        stream=False,
+        model=TEST_MODEL,
     )
 
     assert response is not None
-    assert "response" in response
-    assert len(response["response"]) > 0
+    assert response.response
+    assert len(response.response) > 0
 
 
 @pytest.mark.asyncio
