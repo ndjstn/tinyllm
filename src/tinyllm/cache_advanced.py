@@ -73,10 +73,10 @@ class SemanticCache:
             text: Text to embed.
 
         Returns:
-            Embedding vector (128-dim).
+            Embedding vector (64-dim).
         """
         hash_val = hashlib.sha512(text.encode("utf-8")).digest()
-        return [float(b) / 255.0 for b in hash_val[:128]]
+        return [float(b) / 255.0 for b in hash_val]
 
     def _cosine_similarity(self, vec1: list[float], vec2: list[float]) -> float:
         """Compute cosine similarity between vectors.

@@ -2,6 +2,139 @@
 
 This module provides a centralized logging setup using structlog with support
 for both development (colored console output) and production (JSON) modes.
+
+Features:
+---------
+1. **Trace Correlation**: Automatic injection of OpenTelemetry trace/span IDs into logs
+2. **Log Sampling**: Rate-based sampling for high-volume scenarios
+3. **Request/Response Logging**: Automatic PII redaction and truncation
+4. **Structured Output**: Consistent JSON or console formatting
+5. **Context Management**: Thread-safe context binding for request tracking
+
+Architecture:
+-------------
+The logging system is built on structlog and provides several processors:
+
+- **add_app_context**: Adds application metadata (name, version)
+- **add_trace_context**: Injects OpenTelemetry trace and span IDs
+- **add_log_sampling**: Implements rate-based log sampling
+- **TimeStamper**: Adds ISO timestamps to all log events
+- **JSONRenderer/ConsoleRenderer**: Format output for different environments
+
+Usage:
+------
+Basic logging:
+
+    >>> from tinyllm.logging import configure_logging, get_logger
+    >>>
+    >>> # Configure logging
+    >>> configure_logging(log_level="INFO", log_format="console")
+    >>>
+    >>> # Get logger
+    >>> logger = get_logger(__name__, component="api")
+    >>>
+    >>> # Log with structured data
+    >>> logger.info("request_received", method="POST", path="/api/generate")
+    >>> logger.error("request_failed", error="Timeout", duration_ms=5000)
+
+Log Sampling for High Volume:
+
+    >>> from tinyllm.logging import configure_log_sampling, configure_logging
+    >>>
+    >>> # Sample 10% of logs
+    >>> configure_log_sampling(sample_rate=0.1)
+    >>>
+    >>> # Or limit to 1000 logs per second
+    >>> configure_log_sampling(max_per_second=1000)
+    >>>
+    >>> # Hash-based sampling (consistent per message)
+    >>> configure_log_sampling(sample_rate=0.5, hash_based=True)
+    >>>
+    >>> # Enable sampling in configuration
+    >>> configure_logging(enable_sampling=True)
+
+Request/Response Logging with PII Redaction:
+
+    >>> from tinyllm.logging import get_request_logger
+    >>>
+    >>> logger = get_request_logger(max_length=1000)
+    >>>
+    >>> # Log request (automatically redacts passwords, API keys, etc.)
+    >>> logger.log_request(
+    ...     request_id="req-123",
+    ...     method="POST",
+    ...     path="/api/v1/generate",
+    ...     headers={"Authorization": "Bearer secret-token"},
+    ...     body={"api_key": "sk-secret", "prompt": "Hello"}
+    ... )
+    >>>
+    >>> # Log response
+    >>> logger.log_response(
+    ...     request_id="req-123",
+    ...     status_code=200,
+    ...     body={"result": "Success"},
+    ...     duration_ms=123.45
+    ... )
+
+Trace Correlation:
+
+    >>> from tinyllm.logging import get_logger
+    >>> from tinyllm.telemetry import trace_span
+    >>>
+    >>> logger = get_logger(__name__)
+    >>>
+    >>> # Logs within trace span automatically include trace_id and span_id
+    >>> with trace_span("process_request"):
+    ...     logger.info("processing", user_id="user123")
+    ...     # Log output includes: trace_id="...", span_id="..."
+
+Context Management:
+
+    >>> from tinyllm.logging import get_logger, bind_context, clear_context
+    >>>
+    >>> logger = get_logger(__name__)
+    >>>
+    >>> # Bind request-scoped context
+    >>> bind_context(request_id="req-123", user_id="user456")
+    >>>
+    >>> # All logs now include this context
+    >>> logger.info("step_1")  # Includes request_id and user_id
+    >>> logger.info("step_2")  # Includes request_id and user_id
+    >>>
+    >>> # Clear context when done
+    >>> clear_context()
+
+PII Redaction:
+--------------
+The RequestResponseLogger automatically redacts sensitive information:
+- API keys (api_key, apikey, api-key patterns)
+- Bearer tokens (Authorization headers)
+- Passwords (password, passwd, pwd fields)
+- Credit card numbers (basic pattern matching)
+- Email addresses
+- SSNs, phone numbers
+- AWS keys, private keys
+
+Best Practices:
+---------------
+1. **Use structured fields**: Log data as fields, not in message strings
+2. **Enable sampling in production**: Reduce log volume while maintaining visibility
+3. **Leverage trace correlation**: Use with OpenTelemetry for end-to-end tracing
+4. **Bind request context**: Add request_id to all logs for correlation
+5. **Use appropriate levels**: DEBUG for verbose, INFO for key events, ERROR for failures
+
+Performance:
+------------
+- Log sampling reduces I/O and storage costs by 90%+ in high-volume scenarios
+- Hash-based sampling ensures consistent sampling of similar messages
+- Async-safe context variables allow high concurrency without locks
+- Redaction patterns are compiled once and reused
+
+See Also:
+---------
+- tinyllm.metrics: Prometheus metrics for quantitative monitoring
+- tinyllm.events: Event system for audit trails and business metrics
+- tinyllm.telemetry: OpenTelemetry integration for distributed tracing
 """
 
 import hashlib

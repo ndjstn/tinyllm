@@ -68,7 +68,7 @@ class TestSemanticCache:
         emb2 = semantic._compute_embedding("hello world")
         emb3 = semantic._compute_embedding("goodbye world")
 
-        assert len(emb1) == 128
+        assert len(emb1) == 64
         assert emb1 == emb2
         assert emb1 != emb3
 
