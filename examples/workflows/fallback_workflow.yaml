@@ -1,0 +1,116 @@
+# Workflow demonstrating fallback model configuration
+# Shows how to configure nodes with resilient model execution
+
+id: "fallback_demo_workflow"
+version: "1.0.0"
+name: "Fallback Model Demo"
+description: |
+  Demonstrates fallback model strategies in TinyLLM workflows.
+  Shows sequential, fastest, and load-balanced strategies.
+
+nodes:
+  # Entry point
+  - id: "start"
+    type: "entry"
+    config: {}
+
+  # Model node with sequential fallback
+  - id: "analyzer"
+    type: "model"
+    config:
+      model: "qwen2.5:3b"
+      enable_fallback: true
+      fallback_models:
+        - "qwen2.5:1.5b"
+        - "qwen2.5:0.5b"
+      fallback_strategy: "sequential"
+      fallback_timeout_ms: 10000
+      temperature: 0.3
+      max_tokens: 1000
+      system_prompt: |
+        You are a code analyzer. Analyze the given code and provide insights
+        about its structure, complexity, and potential improvements.
+
+  # Model node with fastest strategy (racing)
+  - id: "summarizer"
+    type: "model"
+    config:
+      model: "qwen2.5:3b"
+      enable_fallback: true
+      fallback_models:
+        - "qwen2.5:1.5b"
+        - "qwen2.5:0.5b"
+      fallback_strategy: "fastest"
+      fallback_timeout_ms: 15000
+      temperature: 0.5
+      max_tokens: 500
+      system_prompt: |
+        You are a technical summarizer. Create concise, clear summaries
+        of technical content.
+
+  # Model node with load-balanced strategy
+  - id: "reviewer"
+    type: "model"
+    config:
+      model: "qwen2.5:3b"
+      enable_fallback: true
+      fallback_models:
+        - "qwen2.5:1.5b"
+      fallback_strategy: "load_balanced"
+      fallback_timeout_ms: 20000
+      temperature: 0.2
+      max_tokens: 1500
+      system_prompt: |
+        You are a code reviewer. Review the analysis and summary,
+        providing additional insights and recommendations.
+
+  # Exit point
+  - id: "end"
+    type: "exit"
+    config: {}
+
+edges:
+  - from_node: "start"
+    to_node: "analyzer"
+    weight: 1.0
+
+  - from_node: "analyzer"
+    to_node: "summarizer"
+    weight: 1.0
+
+  - from_node: "summarizer"
+    to_node: "reviewer"
+    weight: 1.0
+
+  - from_node: "reviewer"
+    to_node: "end"
+    weight: 1.0
+
+entry_points:
+  - "start"
+
+exit_points:
+  - "end"
+
+protected: []
+
+metadata:
+  author: "TinyLLM Team"
+  tags:
+    - "fallback"
+    - "resilience"
+    - "multi-model"
+  description: |
+    This workflow demonstrates three different fallback strategies:
+
+    1. Sequential (analyzer): Tries models in order, only falling back on failure.
+       Best for reliability when you have a preferred model hierarchy.
+
+    2. Fastest (summarizer): Races all models and uses the first response.
+       Best for latency-critical applications where any working model is acceptable.
+
+    3. Load Balanced (reviewer): Uses health metrics to select the best model.
+       Best for production systems with varying model availability and performance.
+
+    Each node will automatically track model health and adapt to failures,
+    ensuring resilient execution even when individual models fail.
