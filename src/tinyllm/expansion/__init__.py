@@ -29,6 +29,39 @@ from tinyllm.expansion.versioning import (
     GraphVersionManager,
     VersionHistory,
 )
+from tinyllm.expansion.spawning import (
+    NodeFactory,
+    NodeSpawner,
+    SpawnConfig,
+    SpawnMetrics,
+    SpawnRecord,
+    SpawnTrigger,
+)
+from tinyllm.expansion.pruning import (
+    NodeHealth,
+    NodeHealthAnalyzer,
+    NodeHealthReport,
+    NodePruner,
+    PruneConfig,
+    PruneHistory,
+    PruneProposal,
+    PruneReason,
+    PruneResult,
+    PruneStatus,
+)
+from tinyllm.expansion.merging import (
+    MergeConfig,
+    MergeHistory,
+    MergeProposal,
+    MergeResult,
+    MergeStatus,
+    MergeStrategy,
+    NodeMerger,
+    NodeSimilarityDetector,
+    NodeSimilarityResult,
+    SimilarityMetric,
+    SimilarityScore,
+)
 
 __all__ = [
     # Models
@@ -57,4 +90,34 @@ __all__ = [
     "GraphVersion",
     "GraphVersionManager",
     "VersionHistory",
+    # Spawning
+    "NodeFactory",
+    "NodeSpawner",
+    "SpawnConfig",
+    "SpawnMetrics",
+    "SpawnRecord",
+    "SpawnTrigger",
+    # Pruning
+    "NodeHealth",
+    "NodeHealthAnalyzer",
+    "NodeHealthReport",
+    "NodePruner",
+    "PruneConfig",
+    "PruneHistory",
+    "PruneProposal",
+    "PruneReason",
+    "PruneResult",
+    "PruneStatus",
+    # Merging
+    "MergeConfig",
+    "MergeHistory",
+    "MergeProposal",
+    "MergeResult",
+    "MergeStatus",
+    "MergeStrategy",
+    "NodeMerger",
+    "NodeSimilarityDetector",
+    "NodeSimilarityResult",
+    "SimilarityMetric",
+    "SimilarityScore",
 ]
