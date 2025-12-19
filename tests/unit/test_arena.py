@@ -60,7 +60,7 @@ def test_arena_reset():
 
     # Allocate some objects
     for i in range(10):
-        arena.allocate(Message(role="user", content=f"test {i}"))
+        arena.allocate(_create_message(f"test {i}"))
 
     assert len(arena) == 10
 
@@ -70,7 +70,7 @@ def test_arena_reset():
     assert len(arena) == 0
 
     # Should be able to allocate again
-    msg = arena.allocate(Message(role="user", content="after reset"))
+    msg = arena.allocate(_create_message("after reset"))
     assert len(arena) == 1
 
 
@@ -85,7 +85,7 @@ def test_arena_stats():
 
     # Add some objects
     for i in range(5):
-        arena.allocate(Message(role="user", content=f"test {i}"))
+        arena.allocate(_create_message(f"test {i}"))
 
     stats = arena.get_stats()
     assert stats.object_count == 5
