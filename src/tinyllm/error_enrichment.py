@@ -4,6 +4,7 @@ This module extends the base error system with rich context,
 impact scoring, aggregation, and notification capabilities.
 """
 
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -106,7 +107,7 @@ class ErrorContext(BaseModel):
         description="Python version"
     )
     process_id: int = Field(
-        default_factory=lambda: sys.getpid(),
+        default_factory=lambda: os.getpid(),
         description="Process ID"
     )
 

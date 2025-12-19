@@ -159,9 +159,7 @@ class AggregatedError(BaseModel):
         default_factory=dict, description="Aggregated metadata"
     )
 
-    class Config:
-        """Pydantic config."""
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
 
     def add_occurrence(self, error: EnrichedError) -> None:
         """Add another occurrence of this error.

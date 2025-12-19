@@ -264,7 +264,7 @@ class TestMessageTransformProperties:
 
         # IDs should be different (though technically could collide, very unlikely)
         # We check that they're not trivially the same
-        assert msg1.id != msg2.id or (
+        assert msg1.message_id != msg2.message_id or (
             msg1.source_node == msg2.source_node
             and msg1.target_node == msg2.target_node
             and msg1.payload.content == msg2.payload.content
@@ -286,10 +286,12 @@ class TestEdgeCases:
 
     @given(st.dictionaries(st.text(min_size=1), st.text(), max_size=0))
     def test_empty_memory_context(self, empty_dict: Dict[str, str]) -> None:
-        """Context can have empty memory."""
-        context = ExecutionContext(trace_id="test", memory=empty_dict)
+        """Context can have empty variables."""
+        from tinyllm.config.loader import Config
 
-        assert len(context.memory) == 0
+        context = ExecutionContext(trace_id="test", graph_id="test_graph", config=Config())
+
+        assert len(context.variables) == 0
 
     @given(st.text(min_size=1, max_size=10000))
     def test_large_content_handling(self, large_content: str) -> None:

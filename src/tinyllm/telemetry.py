@@ -785,6 +785,368 @@ def trace_llm_request(model: str, prompt_length: int, temperature: float):
     )
 
 
+# Custom span attributes for graph/node context
+
+
+class GraphSpanAttributes:
+    """Standard attribute names for graph execution spans.
+
+    These follow semantic conventions for distributed tracing of
+    graph-based workflows and LLM execution.
+    """
+
+    # Graph attributes
+    GRAPH_ID = "graph.id"
+    GRAPH_VERSION = "graph.version"
+    GRAPH_NAME = "graph.name"
+    GRAPH_TYPE = "graph.type"
+    GRAPH_DEPTH = "graph.depth"
+    GRAPH_NODE_COUNT = "graph.node_count"
+    GRAPH_EDGE_COUNT = "graph.edge_count"
+
+    # Node attributes
+    NODE_ID = "node.id"
+    NODE_NAME = "node.name"
+    NODE_TYPE = "node.type"
+    NODE_INDEX = "node.index"
+    NODE_DEPTH = "node.depth"
+    NODE_PARENT = "node.parent"
+    NODE_CHILDREN = "node.children"
+
+    # Execution attributes
+    EXECUTION_ID = "execution.id"
+    EXECUTION_STEP = "execution.step"
+    EXECUTION_STATUS = "execution.status"
+    EXECUTION_RETRY_COUNT = "execution.retry_count"
+    EXECUTION_TIMEOUT_MS = "execution.timeout_ms"
+    EXECUTION_DURATION_MS = "execution.duration_ms"
+
+    # Task/Message attributes
+    TASK_ID = "task.id"
+    TASK_TYPE = "task.type"
+    TASK_CONTENT = "task.content"
+    TASK_PRIORITY = "task.priority"
+    MESSAGE_COUNT = "message.count"
+    MESSAGE_TOTAL_LENGTH = "message.total_length"
+
+    # Model/LLM attributes
+    LLM_MODEL = "llm.model"
+    LLM_PROVIDER = "llm.provider"
+    LLM_TEMPERATURE = "llm.temperature"
+    LLM_MAX_TOKENS = "llm.max_tokens"
+    LLM_PROMPT_LENGTH = "llm.prompt_length"
+    LLM_RESPONSE_LENGTH = "llm.response_length"
+    LLM_TOKEN_COUNT_PROMPT = "llm.token_count.prompt"
+    LLM_TOKEN_COUNT_RESPONSE = "llm.token_count.response"
+    LLM_COST_USD = "llm.cost_usd"
+
+    # Cache attributes
+    CACHE_HIT = "cache.hit"
+    CACHE_KEY = "cache.key"
+    CACHE_TTL = "cache.ttl"
+
+    # Error attributes
+    ERROR_TYPE = "error.type"
+    ERROR_MESSAGE = "error.message"
+    ERROR_STACKTRACE = "error.stacktrace"
+    ERROR_RETRY_AFTER_MS = "error.retry_after_ms"
+
+
+def set_graph_attributes(
+    graph_id: str,
+    graph_name: Optional[str] = None,
+    graph_version: Optional[str] = None,
+    graph_type: Optional[str] = None,
+    node_count: Optional[int] = None,
+    edge_count: Optional[int] = None,
+    depth: Optional[int] = None,
+) -> None:
+    """Set graph-level span attributes.
+
+    Args:
+        graph_id: Unique graph identifier.
+        graph_name: Human-readable graph name.
+        graph_version: Graph version.
+        graph_type: Type of graph (e.g., 'dag', 'tree', 'cyclic').
+        node_count: Number of nodes in graph.
+        edge_count: Number of edges in graph.
+        depth: Maximum depth of graph.
+
+    Example:
+        >>> with trace_span("graph.execute"):
+        ...     set_graph_attributes(
+        ...         graph_id="g123",
+        ...         graph_name="code_generation",
+        ...         node_count=5,
+        ...         depth=3
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.GRAPH_ID, graph_id)
+
+    if graph_name:
+        set_span_attribute(GraphSpanAttributes.GRAPH_NAME, graph_name)
+    if graph_version:
+        set_span_attribute(GraphSpanAttributes.GRAPH_VERSION, graph_version)
+    if graph_type:
+        set_span_attribute(GraphSpanAttributes.GRAPH_TYPE, graph_type)
+    if node_count is not None:
+        set_span_attribute(GraphSpanAttributes.GRAPH_NODE_COUNT, str(node_count))
+    if edge_count is not None:
+        set_span_attribute(GraphSpanAttributes.GRAPH_EDGE_COUNT, str(edge_count))
+    if depth is not None:
+        set_span_attribute(GraphSpanAttributes.GRAPH_DEPTH, str(depth))
+
+
+def set_node_attributes(
+    node_id: str,
+    node_type: str,
+    node_name: Optional[str] = None,
+    node_index: Optional[int] = None,
+    node_depth: Optional[int] = None,
+    parent_node: Optional[str] = None,
+    children_nodes: Optional[list[str]] = None,
+) -> None:
+    """Set node-level span attributes.
+
+    Args:
+        node_id: Unique node identifier.
+        node_type: Type of node (e.g., 'model', 'transform', 'fanout').
+        node_name: Human-readable node name.
+        node_index: Index in execution order.
+        node_depth: Depth in graph hierarchy.
+        parent_node: Parent node ID.
+        children_nodes: List of child node IDs.
+
+    Example:
+        >>> with trace_span("node.execute"):
+        ...     set_node_attributes(
+        ...         node_id="n1",
+        ...         node_type="model",
+        ...         node_name="code_generator",
+        ...         node_index=2,
+        ...         node_depth=1
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.NODE_ID, node_id)
+    set_span_attribute(GraphSpanAttributes.NODE_TYPE, node_type)
+
+    if node_name:
+        set_span_attribute(GraphSpanAttributes.NODE_NAME, node_name)
+    if node_index is not None:
+        set_span_attribute(GraphSpanAttributes.NODE_INDEX, str(node_index))
+    if node_depth is not None:
+        set_span_attribute(GraphSpanAttributes.NODE_DEPTH, str(node_depth))
+    if parent_node:
+        set_span_attribute(GraphSpanAttributes.NODE_PARENT, parent_node)
+    if children_nodes:
+        # Store as comma-separated list
+        set_span_attribute(GraphSpanAttributes.NODE_CHILDREN, ",".join(children_nodes))
+
+
+def set_execution_attributes(
+    execution_id: str,
+    step: int,
+    status: Optional[str] = None,
+    retry_count: Optional[int] = None,
+    timeout_ms: Optional[int] = None,
+    duration_ms: Optional[float] = None,
+) -> None:
+    """Set execution-level span attributes.
+
+    Args:
+        execution_id: Unique execution identifier.
+        step: Current execution step.
+        status: Execution status ('running', 'success', 'failed').
+        retry_count: Number of retries attempted.
+        timeout_ms: Execution timeout in milliseconds.
+        duration_ms: Actual execution duration.
+
+    Example:
+        >>> with trace_span("node.execute"):
+        ...     set_execution_attributes(
+        ...         execution_id="e456",
+        ...         step=3,
+        ...         status="success",
+        ...         duration_ms=1234.56
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.EXECUTION_ID, execution_id)
+    set_span_attribute(GraphSpanAttributes.EXECUTION_STEP, str(step))
+
+    if status:
+        set_span_attribute(GraphSpanAttributes.EXECUTION_STATUS, status)
+    if retry_count is not None:
+        set_span_attribute(GraphSpanAttributes.EXECUTION_RETRY_COUNT, str(retry_count))
+    if timeout_ms is not None:
+        set_span_attribute(GraphSpanAttributes.EXECUTION_TIMEOUT_MS, str(timeout_ms))
+    if duration_ms is not None:
+        set_span_attribute(GraphSpanAttributes.EXECUTION_DURATION_MS, str(round(duration_ms, 2)))
+
+
+def set_task_attributes(
+    task_id: Optional[str] = None,
+    task_type: Optional[str] = None,
+    task_content: Optional[str] = None,
+    task_priority: Optional[int] = None,
+    message_count: Optional[int] = None,
+) -> None:
+    """Set task/message-level span attributes.
+
+    Args:
+        task_id: Unique task identifier.
+        task_type: Type of task.
+        task_content: Task content (will be truncated).
+        task_priority: Task priority.
+        message_count: Number of messages in task.
+
+    Example:
+        >>> with trace_span("task.process"):
+        ...     set_task_attributes(
+        ...         task_id="t789",
+        ...         task_type="code_generation",
+        ...         task_content="Write a Python function",
+        ...         message_count=5
+        ...     )
+    """
+    if task_id:
+        set_span_attribute(GraphSpanAttributes.TASK_ID, task_id)
+    if task_type:
+        set_span_attribute(GraphSpanAttributes.TASK_TYPE, task_type)
+    if task_content:
+        # Truncate to prevent huge spans
+        truncated = task_content[:200] + "..." if len(task_content) > 200 else task_content
+        set_span_attribute(GraphSpanAttributes.TASK_CONTENT, truncated)
+    if task_priority is not None:
+        set_span_attribute(GraphSpanAttributes.TASK_PRIORITY, str(task_priority))
+    if message_count is not None:
+        set_span_attribute(GraphSpanAttributes.MESSAGE_COUNT, str(message_count))
+
+
+def set_llm_attributes(
+    model: str,
+    provider: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    prompt_length: Optional[int] = None,
+    response_length: Optional[int] = None,
+    prompt_tokens: Optional[int] = None,
+    response_tokens: Optional[int] = None,
+    cost_usd: Optional[float] = None,
+) -> None:
+    """Set LLM-specific span attributes.
+
+    Args:
+        model: Model name.
+        provider: LLM provider (e.g., 'ollama', 'openai').
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens in response.
+        prompt_length: Length of prompt in characters.
+        response_length: Length of response in characters.
+        prompt_tokens: Number of tokens in prompt.
+        response_tokens: Number of tokens in response.
+        cost_usd: Cost in USD for the request.
+
+    Example:
+        >>> with trace_span("llm.generate"):
+        ...     set_llm_attributes(
+        ...         model="gpt-4",
+        ...         provider="openai",
+        ...         temperature=0.7,
+        ...         prompt_tokens=100,
+        ...         response_tokens=50,
+        ...         cost_usd=0.005
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.LLM_MODEL, model)
+
+    if provider:
+        set_span_attribute(GraphSpanAttributes.LLM_PROVIDER, provider)
+    if temperature is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_TEMPERATURE, str(temperature))
+    if max_tokens is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_MAX_TOKENS, str(max_tokens))
+    if prompt_length is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_PROMPT_LENGTH, str(prompt_length))
+    if response_length is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_RESPONSE_LENGTH, str(response_length))
+    if prompt_tokens is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_TOKEN_COUNT_PROMPT, str(prompt_tokens))
+    if response_tokens is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_TOKEN_COUNT_RESPONSE, str(response_tokens))
+    if cost_usd is not None:
+        set_span_attribute(GraphSpanAttributes.LLM_COST_USD, str(round(cost_usd, 6)))
+
+
+def set_cache_attributes(
+    cache_hit: bool,
+    cache_key: Optional[str] = None,
+    cache_ttl: Optional[int] = None,
+) -> None:
+    """Set cache-related span attributes.
+
+    Args:
+        cache_hit: Whether cache was hit.
+        cache_key: Cache key (will be hashed if long).
+        cache_ttl: Cache TTL in seconds.
+
+    Example:
+        >>> with trace_span("cache.lookup"):
+        ...     set_cache_attributes(
+        ...         cache_hit=True,
+        ...         cache_key="prompt_hash_123",
+        ...         cache_ttl=3600
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.CACHE_HIT, str(cache_hit))
+
+    if cache_key:
+        # Hash long keys
+        if len(cache_key) > 100:
+            import hashlib
+
+            cache_key = hashlib.sha256(cache_key.encode()).hexdigest()[:16]
+        set_span_attribute(GraphSpanAttributes.CACHE_KEY, cache_key)
+
+    if cache_ttl is not None:
+        set_span_attribute(GraphSpanAttributes.CACHE_TTL, str(cache_ttl))
+
+
+def set_error_attributes(
+    error_type: str,
+    error_message: str,
+    error_stacktrace: Optional[str] = None,
+    retry_after_ms: Optional[int] = None,
+) -> None:
+    """Set error-related span attributes.
+
+    Args:
+        error_type: Type/class of error.
+        error_message: Error message.
+        error_stacktrace: Full stacktrace (truncated).
+        retry_after_ms: Milliseconds to wait before retry.
+
+    Example:
+        >>> try:
+        ...     risky_operation()
+        ... except Exception as e:
+        ...     set_error_attributes(
+        ...         error_type=type(e).__name__,
+        ...         error_message=str(e),
+        ...         retry_after_ms=1000
+        ...     )
+    """
+    set_span_attribute(GraphSpanAttributes.ERROR_TYPE, error_type)
+    set_span_attribute(GraphSpanAttributes.ERROR_MESSAGE, error_message[:500])
+
+    if error_stacktrace:
+        # Truncate stacktrace
+        truncated = error_stacktrace[:1000] + "..." if len(error_stacktrace) > 1000 else error_stacktrace
+        set_span_attribute(GraphSpanAttributes.ERROR_STACKTRACE, truncated)
+
+    if retry_after_ms is not None:
+        set_span_attribute(GraphSpanAttributes.ERROR_RETRY_AFTER_MS, str(retry_after_ms))
+
+
 __all__ = [
     "TelemetryConfig",
     "configure_telemetry",
@@ -814,4 +1176,12 @@ __all__ = [
     "trace_executor_execution",
     "trace_node_execution",
     "trace_llm_request",
+    "GraphSpanAttributes",
+    "set_graph_attributes",
+    "set_node_attributes",
+    "set_execution_attributes",
+    "set_task_attributes",
+    "set_llm_attributes",
+    "set_cache_attributes",
+    "set_error_attributes",
 ]

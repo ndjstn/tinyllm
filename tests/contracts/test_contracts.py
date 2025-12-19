@@ -402,7 +402,11 @@ class TestTransformNodeContract(NodeContractTestBase):
 
     @property
     def minimal_config(self) -> dict:
-        return {"transform_type": "identity"}
+        return {
+            "transforms": [
+                {"type": "strip"},
+            ]
+        }
 
 
 class TestLoopNodeContract(NodeContractTestBase):
