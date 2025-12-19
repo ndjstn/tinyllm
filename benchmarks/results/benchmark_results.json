@@ -1,0 +1,222 @@
+[
+  {
+    "query": "What is 15 + 27?",
+    "expected_category": "math",
+    "actual_route": "math",
+    "success": true,
+    "latency_ms": 3483,
+    "nodes_executed": 4,
+    "response_length": 1092,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:14.534015"
+  },
+  {
+    "query": "Calculate the square root of 144",
+    "expected_category": "math",
+    "actual_route": "math",
+    "success": true,
+    "latency_ms": 3502,
+    "nodes_executed": 4,
+    "response_length": 982,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:18.050634"
+  },
+  {
+    "query": "What is 8 factorial?",
+    "expected_category": "math",
+    "actual_route": "math",
+    "success": true,
+    "latency_ms": 3564,
+    "nodes_executed": 4,
+    "response_length": 677,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:21.634741"
+  },
+  {
+    "query": "Solve: 3x + 7 = 22",
+    "expected_category": "math",
+    "actual_route": "math",
+    "success": true,
+    "latency_ms": 9819,
+    "nodes_executed": 4,
+    "response_length": 2776,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:31.469515"
+  },
+  {
+    "query": "What percentage is 45 of 180?",
+    "expected_category": "math",
+    "actual_route": "math",
+    "success": true,
+    "latency_ms": 3856,
+    "nodes_executed": 4,
+    "response_length": 803,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:35.340368"
+  },
+  {
+    "query": "Write a Python function to reverse a string",
+    "expected_category": "code",
+    "actual_route": "code",
+    "success": true,
+    "latency_ms": 7530,
+    "nodes_executed": 4,
+    "response_length": 2817,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:42.890519"
+  },
+  {
+    "query": "How do I read a file in Python?",
+    "expected_category": "code",
+    "actual_route": "code",
+    "success": true,
+    "latency_ms": 7403,
+    "nodes_executed": 4,
+    "response_length": 2665,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:50.307487"
+  },
+  {
+    "query": "Write a function to find the maximum element in a list",
+    "expected_category": "code",
+    "actual_route": "code",
+    "success": true,
+    "latency_ms": 8121,
+    "nodes_executed": 4,
+    "response_length": 2768,
+    "error": null,
+    "timestamp": "2025-12-18T21:22:58.445355"
+  },
+  {
+    "query": "Create a class for a binary search tree",
+    "expected_category": "code",
+    "actual_route": "code",
+    "success": true,
+    "latency_ms": 12187,
+    "nodes_executed": 4,
+    "response_length": 4570,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:10.649854"
+  },
+  {
+    "query": "Write a recursive fibonacci function",
+    "expected_category": "code",
+    "actual_route": "code",
+    "success": true,
+    "latency_ms": 7987,
+    "nodes_executed": 4,
+    "response_length": 2847,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:18.646512"
+  },
+  {
+    "query": "What is photosynthesis?",
+    "expected_category": "general",
+    "actual_route": "general",
+    "success": true,
+    "latency_ms": 6481,
+    "nodes_executed": 4,
+    "response_length": 2555,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:25.154531"
+  },
+  {
+    "query": "Explain the water cycle",
+    "expected_category": "general",
+    "actual_route": "general",
+    "success": true,
+    "latency_ms": 10301,
+    "nodes_executed": 4,
+    "response_length": 3965,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:35.465151"
+  },
+  {
+    "query": "Who wrote Romeo and Juliet?",
+    "expected_category": "general",
+    "actual_route": "general",
+    "success": true,
+    "latency_ms": 830,
+    "nodes_executed": 4,
+    "response_length": 43,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:36.312530"
+  },
+  {
+    "query": "What causes earthquakes?",
+    "expected_category": "general",
+    "actual_route": "general",
+    "success": true,
+    "latency_ms": 6238,
+    "nodes_executed": 4,
+    "response_length": 2327,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:42.564618"
+  },
+  {
+    "query": "Describe the solar system",
+    "expected_category": "general",
+    "actual_route": "general",
+    "success": true,
+    "latency_ms": 5927,
+    "nodes_executed": 4,
+    "response_length": 2295,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:48.508934"
+  },
+  {
+    "query": "Write Python code to calculate compound interest",
+    "expected_category": "compound",
+    "actual_route": "compound",
+    "success": true,
+    "latency_ms": 9909,
+    "nodes_executed": 4,
+    "response_length": 3968,
+    "error": null,
+    "timestamp": "2025-12-18T21:23:58.433362"
+  },
+  {
+    "query": "Create a function to solve quadratic equations",
+    "expected_category": "compound",
+    "actual_route": "compound",
+    "success": true,
+    "latency_ms": 10374,
+    "nodes_executed": 4,
+    "response_length": 3099,
+    "error": null,
+    "timestamp": "2025-12-18T21:24:08.823004"
+  },
+  {
+    "query": "Write code to compute statistical mean and standard deviation",
+    "expected_category": "compound",
+    "actual_route": "compound",
+    "success": true,
+    "latency_ms": 10670,
+    "nodes_executed": 4,
+    "response_length": 3282,
+    "error": null,
+    "timestamp": "2025-12-18T21:24:19.508433"
+  },
+  {
+    "query": "Implement Newton's method for finding square roots in Python",
+    "expected_category": "compound",
+    "actual_route": "compound",
+    "success": true,
+    "latency_ms": 9258,
+    "nodes_executed": 4,
+    "response_length": 2966,
+    "error": null,
+    "timestamp": "2025-12-18T21:24:28.781835"
+  },
+  {
+    "query": "Write a program to calculate loan amortization",
+    "expected_category": "compound",
+    "actual_route": "compound",
+    "success": true,
+    "latency_ms": 12680,
+    "nodes_executed": 4,
+    "response_length": 4852,
+    "error": null,
+    "timestamp": "2025-12-18T21:24:41.500289"
+  }
+]

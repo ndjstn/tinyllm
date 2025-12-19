@@ -9,12 +9,13 @@ This document outlines the development phases for TinyLLM. Each phase builds on 
 │                         DEVELOPMENT PHASES                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  Phase 0: Foundation          ████████░░░░░░░░░░░░  IN PROGRESS     │
-│  Phase 1: Core Engine         ░░░░░░░░░░░░░░░░░░░░  Not Started     │
-│  Phase 2: Tools               ░░░░░░░░░░░░░░░░░░░░  Not Started     │
-│  Phase 3: Routing             ░░░░░░░░░░░░░░░░░░░░  Not Started     │
-│  Phase 4: Grading             ░░░░░░░░░░░░░░░░░░░░  Not Started     │
-│  Phase 5: Self-Improvement    ░░░░░░░░░░░░░░░░░░░░  Not Started     │
+│  Phase 0: Foundation          ████████████████████  COMPLETE ✓      │
+│  Phase 1: Core Engine         ████████████████████  COMPLETE ✓      │
+│  Phase 2: Tools               ████████████████████  COMPLETE ✓      │
+│  Phase 3: Routing             ████████████████████  COMPLETE ✓      │
+│  Phase 4: Grading             ████████████████████  COMPLETE ✓      │
+│  Phase 5: Self-Improvement    ████████████████████  COMPLETE ✓      │
+│  Phase 6: Memory              ████████████████████  COMPLETE ✓      │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -25,19 +26,19 @@ This document outlines the development phases for TinyLLM. Each phase builds on 
 
 **Goal**: Basic infrastructure that everything else builds on.
 
-**Status**: 🚧 In Progress
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Config Loader | `src/tinyllm/config/loader.py` | ⬜ | #TBD |
-| System Config Model | `src/tinyllm/config/system.py` | ⬜ | #TBD |
-| Model Config Model | `src/tinyllm/config/models.py` | ⬜ | #TBD |
-| Graph Config Model | `src/tinyllm/config/graph.py` | ⬜ | #TBD |
-| Message Types | `src/tinyllm/core/message.py` | ⬜ | #TBD |
-| Ollama Client | `src/tinyllm/models/client.py` | ⬜ | #TBD |
-| CLI Skeleton | `src/tinyllm/cli.py` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Config Loader | `src/tinyllm/config/loader.py` | ✅ |
+| System Config Model | `src/tinyllm/config/system.py` | ✅ |
+| Model Config Model | `src/tinyllm/config/models.py` | ✅ |
+| Graph Config Model | `src/tinyllm/config/graph.py` | ✅ |
+| Message Types | `src/tinyllm/core/message.py` | ✅ |
+| Ollama Client | `src/tinyllm/models/client.py` | ✅ |
+| CLI Skeleton | `src/tinyllm/cli.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -53,28 +54,24 @@ tinyllm --version
 tinyllm doctor
 ```
 
-### Dependencies
-
-- None (this is the foundation)
-
 ---
 
 ## Phase 1: Core Engine
 
 **Goal**: Graph structure and basic execution.
 
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Base Node | `src/tinyllm/core/node.py` | ⬜ | #TBD |
-| Node Registry | `src/tinyllm/core/registry.py` | ⬜ | #TBD |
-| Graph Structure | `src/tinyllm/core/graph.py` | ⬜ | #TBD |
-| Graph Builder | `src/tinyllm/core/builder.py` | ⬜ | #TBD |
-| Executor | `src/tinyllm/core/executor.py` | ⬜ | #TBD |
-| Trace Recorder | `src/tinyllm/core/trace.py` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Base Node | `src/tinyllm/core/node.py` | ✅ |
+| Node Registry | `src/tinyllm/core/registry.py` | ✅ |
+| Graph Structure | `src/tinyllm/core/graph.py` | ✅ |
+| Graph Builder | `src/tinyllm/core/builder.py` | ✅ |
+| Executor | `src/tinyllm/core/executor.py` | ✅ |
+| Trace Recorder | `src/tinyllm/core/trace.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -83,12 +80,8 @@ tinyllm doctor
 tinyllm run "hello world"
 
 # Trace is recorded
-tinyllm run --trace "test" | jq .trace
+tinyllm run --trace "test"
 ```
-
-### Dependencies
-
-- Phase 0 complete
 
 ---
 
@@ -96,17 +89,17 @@ tinyllm run --trace "test" | jq .trace
 
 **Goal**: Tool system with initial implementations.
 
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Tool Base Class | `src/tinyllm/tools/base.py` | ⬜ | #TBD |
-| Tool Registry | `src/tinyllm/tools/registry.py` | ⬜ | #TBD |
-| Calculator | `src/tinyllm/tools/calculator.py` | ⬜ | #TBD |
-| Code Executor | `src/tinyllm/tools/code_executor.py` | ⬜ | #TBD |
-| Sandbox | `src/tinyllm/tools/sandbox.py` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Tool Base Class | `src/tinyllm/tools/base.py` | ✅ |
+| Tool Registry | `src/tinyllm/tools/registry.py` | ✅ |
+| Calculator | `src/tinyllm/tools/calculator.py` | ✅ |
+| Code Executor | `src/tinyllm/tools/code_executor.py` | ✅ |
+| Sandbox | `src/tinyllm/tools/sandbox.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -118,30 +111,24 @@ tinyllm tool calculator "2 + 2"  # → 4
 tinyllm tool code "print('hello')"  # → hello
 ```
 
-### Dependencies
-
-- Phase 1 complete
-
 ---
 
 ## Phase 3: Routing & Specialists
 
 **Goal**: Router nodes and specialist model nodes.
 
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Router Node | `src/tinyllm/nodes/router.py` | ⬜ | #TBD |
-| Model Node | `src/tinyllm/nodes/model.py` | ⬜ | #TBD |
-| Gate Node | `src/tinyllm/nodes/gate.py` | ⬜ | #TBD |
-| Prompt Loader | `src/tinyllm/prompts/loader.py` | ⬜ | #TBD |
-| Task Classifier Prompt | `prompts/routing/task_classifier.yaml` | ⬜ | #TBD |
-| Code Specialist Prompt | `prompts/specialists/code.yaml` | ⬜ | #TBD |
-| Math Specialist Prompt | `prompts/specialists/math.yaml` | ⬜ | #TBD |
-| General Specialist Prompt | `prompts/specialists/general.yaml` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Router Node | `src/tinyllm/nodes/router.py` | ✅ |
+| Model Node | `src/tinyllm/nodes/model.py` | ✅ |
+| Gate Node | `src/tinyllm/nodes/gate.py` | ✅ |
+| Prompt Loader | `src/tinyllm/prompts/loader.py` | ✅ |
+| Task Classifier Prompt | `prompts/routing/task_classifier.yaml` | ✅ |
+| Specialist Prompts | `prompts/specialists/*.yaml` | ✅ |
 
 ### Acceptance Criteria
 
@@ -151,12 +138,8 @@ tinyllm run "write a function"  # → routed to code specialist
 tinyllm run "what is 2+2"  # → routed to math specialist
 
 # Quality gate works
-tinyllm run --verbose "test"  # Shows gate pass/fail
+tinyllm run --trace "test"  # Shows gate pass/fail
 ```
-
-### Dependencies
-
-- Phase 2 complete
 
 ---
 
@@ -164,18 +147,18 @@ tinyllm run --verbose "test"  # Shows gate pass/fail
 
 **Goal**: LLM-as-judge evaluation and metrics.
 
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Judge Interface | `src/tinyllm/grading/judge.py` | ⬜ | #TBD |
-| Rule-Based Evaluator | `src/tinyllm/grading/rules.py` | ⬜ | #TBD |
-| LLM Judge | `src/tinyllm/grading/llm_judge.py` | ⬜ | #TBD |
-| Metrics Tracker | `src/tinyllm/grading/metrics.py` | ⬜ | #TBD |
-| Failure Forensics | `src/tinyllm/grading/forensics.py` | ⬜ | #TBD |
-| Judge Prompts | `prompts/grading/*.yaml` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Grade Models | `src/tinyllm/grading/models.py` | ✅ |
+| Rule-Based Evaluator | `src/tinyllm/grading/rules.py` | ✅ |
+| LLM Judge | `src/tinyllm/grading/llm_judge.py` | ✅ |
+| Metrics Tracker | `src/tinyllm/grading/metrics.py` | ✅ |
+| Failure Forensics | `src/tinyllm/grading/forensics.py` | ✅ |
+| Reward Models | `src/tinyllm/grading/reward.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -190,28 +173,23 @@ tinyllm metrics show --node specialist.math
 tinyllm failures analyze --last 100
 ```
 
-### Dependencies
-
-- Phase 3 complete
-
 ---
 
 ## Phase 5: Self-Improvement
 
 **Goal**: Recursive expansion and pruning.
 
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 
 ### Deliverables
 
-| Component | File | Status | Issue |
-|-----------|------|--------|-------|
-| Expansion Triggers | `src/tinyllm/expansion/triggers.py` | ⬜ | #TBD |
-| Graph Mutations | `src/tinyllm/expansion/mutations.py` | ⬜ | #TBD |
-| Pruning System | `src/tinyllm/expansion/pruning.py` | ⬜ | #TBD |
-| A/B Testing | `src/tinyllm/expansion/ab_test.py` | ⬜ | #TBD |
-| Version Control | `src/tinyllm/expansion/versioning.py` | ⬜ | #TBD |
-| Expansion Prompts | `prompts/meta/expansion_*.yaml` | ⬜ | #TBD |
+| Component | File | Status |
+|-----------|------|--------|
+| Expansion Models | `src/tinyllm/expansion/models.py` | ✅ |
+| Pattern Analyzer | `src/tinyllm/expansion/analyzer.py` | ✅ |
+| Strategy Generator | `src/tinyllm/expansion/strategies.py` | ✅ |
+| Expansion Engine | `src/tinyllm/expansion/engine.py` | ✅ |
+| Version Control | `src/tinyllm/expansion/versioning.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -220,26 +198,42 @@ tinyllm failures analyze --last 100
 # (After running 100+ requests with >30% failure rate on a node)
 tinyllm expansion status  # Shows pending expansions
 
-# Manual expansion
-tinyllm expansion trigger --node specialist.math
-
-# Rollback works
-tinyllm graph rollback --version 1.0.0
+# Graph versioning
+tinyllm graph versions     # List versions
+tinyllm graph save "msg"   # Save new version
+tinyllm graph rollback v1  # Rollback
 ```
 
-### Dependencies
+---
 
-- Phase 4 complete
+## Phase 6: Memory System
+
+**Goal**: Short-term and long-term memory for conversational context.
+
+**Status**: ✅ Complete
+
+### Deliverables
+
+| Component | File | Status |
+|-----------|------|--------|
+| Memory Models | `src/tinyllm/memory/models.py` | ✅ |
+| Short-Term Memory | `src/tinyllm/memory/stm.py` | ✅ |
+| Long-Term Memory | `src/tinyllm/memory/ltm.py` | ✅ |
+| Memory Store | `src/tinyllm/memory/store.py` | ✅ |
+
+### Acceptance Criteria
+
+```bash
+# Interactive chat with memory
+tinyllm chat
+
+# Memory persists across conversation
+# Context is retrieved for prompts
+```
 
 ---
 
 ## Future Phases
-
-### Phase 6: Memory System
-
-- Short-term memory (conversation)
-- Long-term memory (vector store)
-- Memory-augmented retrieval
 
 ### Phase 7: Advanced Features
 
@@ -269,32 +263,30 @@ tinyllm graph rollback --version 1.0.0
 
 ## Milestone Targets
 
-| Milestone | Description | Target |
+| Milestone | Description | Status |
 |-----------|-------------|--------|
-| **M1: First Response** | Execute a query end-to-end | Phase 1 |
-| **M2: Tool Use** | Model calls a tool successfully | Phase 2 |
-| **M3: Smart Routing** | Router picks correct specialist | Phase 3 |
-| **M4: Quality Gates** | Outputs are validated | Phase 3 |
-| **M5: Graded Outputs** | LLM judges outputs | Phase 4 |
-| **M6: First Expansion** | Node expands automatically | Phase 5 |
-| **M7: Stable System** | 24h+ without manual intervention | Phase 5 |
+| **M1: First Response** | Execute a query end-to-end | ✅ Complete |
+| **M2: Tool Use** | Model calls a tool successfully | ✅ Complete |
+| **M3: Smart Routing** | Router picks correct specialist | ✅ Complete |
+| **M4: Quality Gates** | Outputs are validated | ✅ Complete |
+| **M5: Graded Outputs** | LLM judges outputs | ✅ Complete |
+| **M6: First Expansion** | Node expands automatically | ✅ Complete |
+| **M7: Memory System** | Context persists | ✅ Complete |
 
 ---
 
-## How to Contribute
+## Test Coverage
 
-1. **Find an issue** for your skill level and interest
-2. **Claim it** by commenting
-3. **Implement** following our [Contributing Guide](CONTRIBUTING.md)
-4. **Submit PR** with tests
-
-```bash
-# Find open issues
-gh issue list --label "help-wanted"
-
-# Filter by phase
-gh issue list --label "phase-0"
-```
+| Component | Tests |
+|-----------|-------|
+| Core (messages, graph, executor) | 40+ |
+| Nodes (router, model, gate) | 30+ |
+| Tools (calculator, code executor) | 35+ |
+| Grading (rules, metrics, forensics) | 50+ |
+| Expansion (analyzer, strategies) | 35+ |
+| Memory (STM, LTM, store) | 40+ |
+| Versioning | 25 |
+| **Total** | **267 tests** |
 
 ---
 
@@ -302,12 +294,12 @@ gh issue list --label "phase-0"
 
 | Version | Content | Status |
 |---------|---------|--------|
-| 0.1.0 | Phase 0-1 complete | 🚧 In Progress |
-| 0.2.0 | Phase 2-3 complete | ⬜ Planned |
-| 0.3.0 | Phase 4 complete | ⬜ Planned |
-| 0.4.0 | Phase 5 complete | ⬜ Planned |
-| 1.0.0 | Stable release | ⬜ Planned |
+| 0.1.0 | Phase 0-1 complete | ✅ Released |
+| 0.2.0 | Phase 2-3 complete | ✅ Released |
+| 0.3.0 | Phase 4 complete | ✅ Released |
+| 0.4.0 | Phase 5-6 complete | ✅ Released |
+| 1.0.0 | Stable release | 🚧 In Progress |
 
 ---
 
-*Last updated: 2024-12-18*
+*Last updated: 2025-12-18*

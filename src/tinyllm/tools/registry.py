@@ -123,5 +123,7 @@ def register_default_tools() -> None:
     Call this at startup to register all built-in tools.
     """
     from tinyllm.tools.calculator import CalculatorTool
+    from tinyllm.tools.code_executor import CodeExecutorTool
 
     ToolRegistry.register(CalculatorTool())
+    ToolRegistry.register(CodeExecutorTool())

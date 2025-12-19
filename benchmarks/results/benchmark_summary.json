@@ -1,0 +1,43 @@
+{
+  "total_queries": 20,
+  "successful_queries": 20,
+  "failed_queries": 0,
+  "avg_latency_ms": 7506.0,
+  "min_latency_ms": 830,
+  "max_latency_ms": 12680,
+  "avg_response_length": 2567.45,
+  "routing_accuracy": 1.0,
+  "queries_per_category": {
+    "math": 5,
+    "code": 5,
+    "general": 5,
+    "compound": 5
+  },
+  "latency_by_category": {
+    "math": {
+      "avg": 4844.8,
+      "min": 3483,
+      "max": 9819,
+      "count": 5
+    },
+    "code": {
+      "avg": 8645.6,
+      "min": 7403,
+      "max": 12187,
+      "count": 5
+    },
+    "general": {
+      "avg": 5955.4,
+      "min": 830,
+      "max": 10301,
+      "count": 5
+    },
+    "compound": {
+      "avg": 10578.2,
+      "min": 9258,
+      "max": 12680,
+      "count": 5
+    }
+  },
+  "timestamp": "2025-12-18T21:24:41.500444"
+}

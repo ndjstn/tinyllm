@@ -54,7 +54,7 @@ class NodeConfig(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    timeout_ms: int = Field(default=5000, ge=100, le=60000)
+    timeout_ms: int = Field(default=30000, ge=100, le=120000)
     retry_count: int = Field(default=0, ge=0, le=3)
     retry_delay_ms: int = Field(default=1000, ge=0, le=10000)
 

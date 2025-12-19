@@ -96,14 +96,8 @@ class ModelNode(BaseNode):
                 model=self._model_config.model,
                 prompt=prompt,
                 system=system,
-                options={
-                    "temperature": self._model_config.temperature,
-                    **(
-                        {"num_predict": self._model_config.max_tokens}
-                        if self._model_config.max_tokens
-                        else {}
-                    ),
-                },
+                temperature=self._model_config.temperature,
+                max_tokens=self._model_config.max_tokens or 2000,
             )
 
             # Create output message with response

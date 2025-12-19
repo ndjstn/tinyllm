@@ -159,18 +159,56 @@ models:
 @app.command()
 def run(
     query: str = typer.Argument(..., help="Query to process"),
-    trace: bool = typer.Option(False, "--trace", "-t", help="Show execution trace"),
-    config_dir: Path = typer.Option(
-        Path("config"),
-        "--config",
-        "-c",
-        help="Configuration directory",
+    graph_path: Path = typer.Option(
+        Path("graphs/multi_domain.yaml"),
+        "--graph",
+        "-g",
+        help="Graph definition file",
     ),
+    trace: bool = typer.Option(False, "--trace", "-t", help="Show execution trace"),
 ):
     """Run a query through TinyLLM."""
-    console.print(f"[dim]Query: {query}[/dim]")
-    console.print("[yellow]Note: Full execution not yet implemented[/yellow]")
-    console.print("[dim]This is a placeholder - implementation coming soon![/dim]")
+
+    async def _run():
+        from tinyllm.core.builder import load_graph
+        from tinyllm.core.executor import Executor
+        from tinyllm.core.message import TaskPayload
+
+        console.print(f"[dim]Query: {query}[/dim]")
+        console.print(f"[dim]Graph: {graph_path}[/dim]\n")
+
+        try:
+            # Load and build graph
+            graph = load_graph(graph_path)
+            executor = Executor(graph)
+
+            # Execute query
+            with console.status("[bold green]Processing..."):
+                task = TaskPayload(content=query)
+                response = await executor.execute(task)
+
+            # Display results
+            if response.success:
+                console.print("\n[bold green]Response:[/bold green]")
+                console.print(response.content or "[dim]No content returned[/dim]")
+            else:
+                console.print(f"\n[red]Error: {response.error.message if response.error else 'Unknown error'}[/red]")
+
+            # Show trace info if requested
+            if trace:
+                console.print(f"\n[dim]─── Trace Info ───[/dim]")
+                console.print(f"[dim]Trace ID: {response.trace_id}[/dim]")
+                console.print(f"[dim]Nodes executed: {response.nodes_executed}[/dim]")
+                console.print(f"[dim]Tokens used: {response.tokens_used or 0}[/dim]")
+                console.print(f"[dim]Latency: {response.total_latency_ms}ms[/dim]")
+
+        except FileNotFoundError as e:
+            console.print(f"[red]Graph file not found: {graph_path}[/red]")
+            console.print("[dim]Use --graph to specify a different graph file[/dim]")
+        except Exception as e:
+            console.print(f"[red]Execution failed: {e}[/red]")
+
+    asyncio.run(_run())
 
 
 @app.command()
@@ -306,6 +344,153 @@ def chat(
         asyncio.run(_chat())
     except KeyboardInterrupt:
         console.print("\n[dim]Goodbye![/dim]")
+
+
+# Graph versioning subcommand
+graph_app = typer.Typer(help="Graph versioning commands")
+app.add_typer(graph_app, name="graph")
+
+
+@graph_app.command("versions")
+def graph_versions(
+    storage: Path = typer.Option(Path(".tinyllm/versions"), "--storage", "-s"),
+):
+    """List all graph versions."""
+    from tinyllm.expansion.versioning import GraphVersionManager
+
+    manager = GraphVersionManager(storage)
+    versions = manager.list_versions()
+
+    if not versions:
+        console.print("[yellow]No versions found[/yellow]")
+        return
+
+    table = Table(title="Graph Versions")
+    table.add_column("Version", style="cyan")
+    table.add_column("Message")
+    table.add_column("Created", style="dim")
+    table.add_column("Changes", style="green")
+
+    for v in versions:
+        is_current = " [current]" if v.version == manager.current_version else ""
+        created = v.created_at.strftime("%Y-%m-%d %H:%M")
+        changes = str(len(v.changes)) if v.changes else "-"
+        table.add_row(f"{v.version}{is_current}", v.message or "-", created, changes)
+
+    console.print(table)
+
+
+@graph_app.command("save")
+def graph_save(
+    graph_path: Path = typer.Argument(..., help="Graph file to version"),
+    message: str = typer.Option("", "--message", "-m", help="Version message"),
+    bump: str = typer.Option("patch", "--bump", "-b", help="Version bump type"),
+    storage: Path = typer.Option(Path(".tinyllm/versions"), "--storage", "-s"),
+):
+    """Save current graph as a new version."""
+    from tinyllm.config.graph import GraphDefinition
+    from tinyllm.expansion.versioning import GraphVersionManager
+    import yaml
+
+    if not graph_path.exists():
+        console.print(f"[red]Graph file not found: {graph_path}[/red]")
+        raise typer.Exit(1)
+
+    # Load graph
+    with open(graph_path) as f:
+        data = yaml.safe_load(f)
+    graph = GraphDefinition(**data)
+
+    # Save version
+    manager = GraphVersionManager(storage)
+    version = manager.save_version(graph, message=message, bump=bump)
+
+    console.print(f"[green]✓ Saved version {version.version}[/green]")
+    if version.changes:
+        console.print(f"[dim]Changes from {version.parent_version}:[/dim]")
+        for change in version.changes:
+            console.print(f"  • {change}")
+
+
+@graph_app.command("rollback")
+def graph_rollback(
+    version: str = typer.Argument(..., help="Version to rollback to"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
+    storage: Path = typer.Option(Path(".tinyllm/versions"), "--storage", "-s"),
+):
+    """Rollback to a previous version."""
+    from tinyllm.expansion.versioning import GraphVersionManager
+    import yaml
+
+    manager = GraphVersionManager(storage)
+
+    try:
+        graph = manager.rollback(version)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Rolled back to version {version}[/green]")
+    console.print(f"[dim]New current version: {manager.current_version}[/dim]")
+
+    if output:
+        with open(output, "w") as f:
+            yaml.dump(graph.model_dump(mode="json"), f, default_flow_style=False)
+        console.print(f"[green]✓ Exported to {output}[/green]")
+
+
+@graph_app.command("diff")
+def graph_diff(
+    version1: str = typer.Argument(..., help="First version"),
+    version2: str = typer.Argument(..., help="Second version"),
+    storage: Path = typer.Option(Path(".tinyllm/versions"), "--storage", "-s"),
+):
+    """Show differences between two versions."""
+    from tinyllm.expansion.versioning import GraphVersionManager
+
+    manager = GraphVersionManager(storage)
+
+    try:
+        changes = manager.diff(version1, version2)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not changes:
+        console.print("[dim]No differences found[/dim]")
+        return
+
+    console.print(f"[bold]Diff: {version1} → {version2}[/bold]\n")
+    for change in changes:
+        if change.startswith("Added"):
+            console.print(f"[green]+ {change}[/green]")
+        elif change.startswith("Removed"):
+            console.print(f"[red]- {change}[/red]")
+        else:
+            console.print(f"[yellow]~ {change}[/yellow]")
+
+
+@graph_app.command("export")
+def graph_export(
+    version: str = typer.Argument(..., help="Version to export"),
+    output: Path = typer.Argument(..., help="Output file path"),
+    storage: Path = typer.Option(Path(".tinyllm/versions"), "--storage", "-s"),
+):
+    """Export a specific version to file."""
+    from tinyllm.expansion.versioning import GraphVersionManager
+    import yaml
+
+    manager = GraphVersionManager(storage)
+    graph = manager.load_version(version)
+
+    if graph is None:
+        console.print(f"[red]Version {version} not found[/red]")
+        raise typer.Exit(1)
+
+    with open(output, "w") as f:
+        yaml.dump(graph.model_dump(mode="json"), f, default_flow_style=False)
+
+    console.print(f"[green]✓ Exported {version} to {output}[/green]")
 
 
 @app.command()

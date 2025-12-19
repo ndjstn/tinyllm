@@ -15,6 +15,9 @@ from tinyllm.core.graph import Graph
 from tinyllm.core.node import BaseNode
 from tinyllm.core.registry import NodeRegistry
 
+# Import nodes to trigger registration via decorators
+import tinyllm.nodes  # noqa: F401
+
 
 class GraphBuilder:
     """Builds Graph instances from definitions.

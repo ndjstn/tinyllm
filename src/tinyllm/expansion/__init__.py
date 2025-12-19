@@ -24,6 +24,11 @@ from tinyllm.expansion.engine import (
     ExpansionEngine,
     ExpansionTrigger,
 )
+from tinyllm.expansion.versioning import (
+    GraphVersion,
+    GraphVersionManager,
+    VersionHistory,
+)
 
 __all__ = [
     # Models
@@ -48,4 +53,8 @@ __all__ = [
     "AutoExpansionMonitor",
     "ExpansionEngine",
     "ExpansionTrigger",
+    # Versioning
+    "GraphVersion",
+    "GraphVersionManager",
+    "VersionHistory",
 ]

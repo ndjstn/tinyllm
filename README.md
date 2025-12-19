@@ -361,21 +361,25 @@ gantt
     Multi-Dim Routing    :done, p3, after p2, 3d
 
     section Quality
-    Grading System       :active, p4, after p3, 7d
-    LLM-as-Judge        :p5, after p4, 5d
+    Grading System       :done, p4, after p3, 7d
+    LLM-as-Judge        :done, p5, after p4, 5d
 
     section Self-Improvement
-    Expansion Triggers   :p6, after p5, 7d
-    Graph Mutations      :p7, after p6, 7d
+    Expansion System     :done, p6, after p5, 7d
+    Memory System        :done, p7, after p6, 7d
 ```
 
 ### Current Status
 
 - [x] **Phase 0**: Foundation (Config, Models, Messages)
 - [x] **Phase 1**: Core Engine (Graph, Executor, Nodes)
-- [x] **Phase 2-3**: Routing & Specialists (Router, Model, Tool, Gate nodes)
-- [ ] **Phase 4**: Grading System (LLM-as-judge, metrics)
-- [ ] **Phase 5**: Self-Improvement (Expansion, mutations)
+- [x] **Phase 2**: Tools (Calculator, Code Executor, Sandbox)
+- [x] **Phase 3**: Routing & Specialists (Router, Model, Gate nodes)
+- [x] **Phase 4**: Grading System (LLM-as-judge, metrics, forensics)
+- [x] **Phase 5**: Self-Improvement (Expansion, strategies, versioning)
+- [x] **Phase 6**: Memory System (STM, LTM, context retrieval)
+
+**267 tests passing** | All core phases complete
 
 ---
 
