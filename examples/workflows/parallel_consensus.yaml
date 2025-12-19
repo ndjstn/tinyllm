@@ -1,0 +1,140 @@
+# Parallel Consensus Workflow
+# Demonstrates multi-model consensus using fanout and aggregation
+
+id: workflow.parallel_consensus
+version: "1.0.0"
+name: Multi-Model Consensus
+description: |
+  Runs the same question through multiple models in parallel and uses
+  majority voting to determine the best answer.
+
+  Flow: Entry → Fanout (3 models in parallel) → Aggregate (majority vote) → Exit
+
+  Use case: Critical questions where you want validation from multiple models
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: Consensus Entry
+    description: Entry point for questions requiring consensus
+
+  # Fanout to multiple models in parallel
+  - id: fanout.models
+    type: dynamic_fanout
+    name: Multi-Model Fanout
+    description: Sends question to 3 models simultaneously
+    config:
+      target_nodes:
+        - model.primary
+        - model.secondary
+        - model.tertiary
+      aggregation_strategy: majority_vote
+      parallel: true
+      timeout_ms: 30000
+      require_all_success: false
+
+  # Three different models for consensus
+  - id: model.primary
+    type: model
+    name: Primary Model
+    description: First opinion using balanced temperature
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: |
+        You are a helpful assistant. Analyze the question carefully and
+        provide a clear, concise answer. Focus on accuracy.
+
+  - id: model.secondary
+    type: model
+    name: Secondary Model
+    description: Second opinion using conservative temperature
+    config:
+      model: qwen2.5:3b
+      temperature: 0.3
+      system_prompt: |
+        You are a precise assistant. Provide factual, well-reasoned answers
+        with careful attention to detail.
+
+  - id: model.tertiary
+    type: model
+    name: Tertiary Model
+    description: Third opinion using higher temperature for diversity
+    config:
+      model: qwen2.5:3b
+      temperature: 0.7
+      system_prompt: |
+        You are a thorough assistant. Consider multiple angles and provide
+        comprehensive answers that explore different perspectives.
+
+  # Transform node to format consensus result
+  - id: transform.format_consensus
+    type: transform
+    name: Format Consensus Result
+    description: Formats the aggregated consensus answer
+    config:
+      transforms:
+        - type: template
+          params:
+            template: |
+              === CONSENSUS ANSWER ===
+
+              {content}
+
+              This answer represents the consensus of multiple AI models.
+
+  # Exit point
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    description: Consensus answer delivered
+    config:
+      status: success
+
+edges:
+  # Entry to fanout
+  - from_node: entry.main
+    to_node: fanout.models
+
+  # Fanout to all models (parallel execution handled by fanout node)
+  - from_node: fanout.models
+    to_node: model.primary
+
+  - from_node: fanout.models
+    to_node: model.secondary
+
+  - from_node: fanout.models
+    to_node: model.tertiary
+
+  # Fanout aggregates results and continues to transform
+  - from_node: fanout.models
+    to_node: transform.format_consensus
+
+  # Transform to exit
+  - from_node: transform.format_consensus
+    to_node: exit.success
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+
+protected:
+  - entry.main
+  - exit.success
+
+metadata:
+  description: |
+    This workflow demonstrates parallel execution and consensus-building.
+
+    Key features:
+    - Parallel execution of 3 models with different configurations
+    - Majority vote aggregation to find consensus
+    - Formatting of the final consensus result
+
+    Best for:
+    - Critical decisions requiring validation
+    - Questions where multiple perspectives add value
+    - Scenarios where you want to reduce model bias

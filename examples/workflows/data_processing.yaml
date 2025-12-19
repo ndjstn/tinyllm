@@ -1,0 +1,205 @@
+# Data Processing Pipeline
+# Demonstrates chained transformations for data ETL workflows
+
+id: workflow.data_processing
+version: "1.0.0"
+name: Data Processing Pipeline
+description: |
+  A multi-stage data transformation pipeline that parses, extracts, validates,
+  and formats data.
+
+  Flow: Entry → Parse JSON → Extract Fields → Validate → Format → Exit
+
+  Use case: Processing structured data through multiple transformation stages
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: Data Entry
+    description: Entry point for raw data input
+
+  # Stage 1: Parse and validate JSON
+  - id: transform.parse_json
+    type: transform
+    name: JSON Parser
+    description: Parses input as JSON and validates structure
+    config:
+      transforms:
+        - type: strip
+          params: {}
+        - type: json_parse
+          params: {}
+      stop_on_error: true
+
+  # Stage 2: Extract key fields
+  - id: transform.extract_fields
+    type: transform
+    name: Field Extractor
+    description: Extracts specific fields from parsed data
+    config:
+      transforms:
+        - type: json_extract
+          params:
+            path: "data"
+      stop_on_error: true
+
+  # Stage 3: Validate extracted data with LLM
+  - id: model.validator
+    type: model
+    name: Data Validator
+    description: Validates extracted data for completeness and correctness
+    config:
+      model: qwen2.5:0.5b
+      temperature: 0.2
+      system_prompt: |
+        You are a data validator. Analyze the provided data and check:
+        1. All required fields are present
+        2. Data types are appropriate
+        3. Values are within reasonable ranges
+        4. No obvious errors or inconsistencies
+
+        Respond in JSON format:
+        {
+          "valid": true/false,
+          "issues": ["list of any issues found"],
+          "validated_data": {original data if valid}
+        }
+
+  # Stage 4: Extract validated data
+  - id: transform.extract_validated
+    type: transform
+    name: Extract Validated Data
+    description: Extracts the validated data from validator response
+    config:
+      transforms:
+        - type: json_parse
+          params: {}
+        - type: json_extract
+          params:
+            path: "validated_data"
+      stop_on_error: true
+
+  # Stage 5: Format output
+  - id: transform.format_output
+    type: transform
+    name: Output Formatter
+    description: Formats validated data for final output
+    config:
+      transforms:
+        - type: json_stringify
+          params: {}
+        - type: template
+          params:
+            template: |
+              ===== PROCESSED DATA =====
+
+              {content}
+
+              ===== END OF DATA =====
+      stop_on_error: false
+
+  # Quality gate to check validation
+  - id: gate.validation_check
+    type: gate
+    name: Validation Gate
+    description: Ensures data passed validation
+    config:
+      mode: expression
+      conditions:
+        - name: valid
+          expression: "'valid' in content.lower() and 'true' in content.lower()"
+          target: transform.extract_validated
+        - name: invalid
+          expression: "True"
+          target: exit.invalid_data
+      default_target: exit.invalid_data
+
+  # Exit points
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    description: Data successfully processed
+    config:
+      status: success
+
+  - id: exit.invalid_data
+    type: exit
+    name: Invalid Data Exit
+    description: Data validation failed
+    config:
+      status: failure
+      message: Data validation failed
+
+edges:
+  # Entry to parse
+  - from_node: entry.main
+    to_node: transform.parse_json
+
+  # Parse to extract
+  - from_node: transform.parse_json
+    to_node: transform.extract_fields
+
+  # Extract to validator
+  - from_node: transform.extract_fields
+    to_node: model.validator
+
+  # Validator to gate
+  - from_node: model.validator
+    to_node: gate.validation_check
+
+  # Gate to validated extraction or failure
+  - from_node: gate.validation_check
+    to_node: transform.extract_validated
+    condition: "matched_condition == 'valid'"
+
+  - from_node: gate.validation_check
+    to_node: exit.invalid_data
+    condition: "matched_condition == 'invalid'"
+
+  # Validated extraction to format
+  - from_node: transform.extract_validated
+    to_node: transform.format_output
+
+  # Format to success
+  - from_node: transform.format_output
+    to_node: exit.success
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.invalid_data
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.invalid_data
+
+metadata:
+  description: |
+    This workflow demonstrates data processing with transforms and validation.
+
+    Key features:
+    - Chained transform nodes for ETL operations
+    - JSON parsing and field extraction
+    - LLM-based data validation
+    - Conditional routing based on validation results
+    - Formatted output generation
+
+    Best for:
+    - Processing API responses
+    - ETL pipelines for structured data
+    - Data validation workflows
+    - Format conversion tasks
+
+    Example input:
+    {
+      "data": {
+        "id": 123,
+        "name": "Sample Record",
+        "values": [1, 2, 3],
+        "timestamp": "2024-01-15T10:30:00Z"
+      }
+    }

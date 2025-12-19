@@ -1,0 +1,187 @@
+# Iterative Refinement Workflow
+# Demonstrates using loops to iteratively improve output quality
+
+id: workflow.iterative_refinement
+version: "1.0.0"
+name: Iterative Refinement Loop
+description: |
+  Generates an initial response, then iteratively refines it until a quality
+  threshold is met or maximum iterations are reached.
+
+  Flow: Entry → Loop (generate → evaluate → refine until quality > 0.8) → Exit
+
+  Use case: Tasks requiring high-quality output through iterative improvement
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: Refinement Entry
+    description: Entry point for tasks requiring iterative refinement
+
+  # Main refinement loop
+  - id: loop.refine
+    type: loop
+    name: Refinement Loop
+    description: Iteratively improves output until quality threshold met
+    config:
+      body_node: model.refiner
+      condition_type: until_condition
+      condition_expression: "last_result.get('metadata', {}).get('quality_score', 0) > 0.8"
+      max_iterations: 5
+      timeout_ms: 120000
+      collect_results: true
+      continue_on_error: false
+      pass_iteration_number: true
+
+  # Model that generates/refines content
+  - id: model.refiner
+    type: model
+    name: Content Refiner
+    description: Generates or refines content based on iteration
+    config:
+      model: qwen2.5:3b
+      temperature: 0.6
+      system_prompt: |
+        You are an expert content refiner. Your task is to create or improve content
+        based on the iteration number and previous feedback.
+
+        For iteration 1: Generate initial content based on the task.
+        For iterations 2+: Refine the previous version by:
+        - Improving clarity and precision
+        - Enhancing structure and flow
+        - Adding relevant details
+        - Removing redundancy
+
+        At the end, rate your output quality from 0.0 to 1.0.
+
+        Format your response as:
+        Content: [Your refined content]
+        Quality Score: [0.0-1.0]
+        Improvements Made: [What you changed in this iteration]
+
+  # Quality evaluator (runs after loop completes)
+  - id: model.evaluator
+    type: model
+    name: Quality Evaluator
+    description: Evaluates final refined content
+    config:
+      model: qwen2.5:0.5b
+      temperature: 0.3
+      system_prompt: |
+        You are a quality evaluator. Analyze the refined content and provide
+        a brief assessment of its quality.
+
+        Evaluate:
+        - Clarity and coherence
+        - Completeness
+        - Accuracy and precision
+        - Overall polish
+
+        Provide a final quality assessment.
+
+  # Transform to extract final content
+  - id: transform.extract_final
+    type: transform
+    name: Extract Final Content
+    description: Extracts the refined content from loop results
+    config:
+      transforms:
+        - type: regex_extract
+          params:
+            pattern: "Content: (.+?)(?:Quality Score:|$)"
+            group: 1
+      stop_on_error: false
+
+  # Gate to check if refinement was successful
+  - id: gate.check_success
+    type: gate
+    name: Success Gate
+    description: Checks if refinement achieved quality goals
+    config:
+      mode: expression
+      conditions:
+        - name: high_quality
+          expression: "metadata.get('loop_result', {}).get('success_rate', 0) > 0.5"
+          target: exit.success
+        - name: needs_work
+          expression: "True"
+          target: exit.needs_improvement
+      default_target: exit.needs_improvement
+
+  # Exit points
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    description: Refinement achieved quality threshold
+    config:
+      status: success
+
+  - id: exit.needs_improvement
+    type: exit
+    name: Needs Improvement Exit
+    description: Maximum iterations reached without meeting quality goal
+    config:
+      status: partial_success
+      message: Refinement completed but may need further improvement
+
+edges:
+  # Entry to loop
+  - from_node: entry.main
+    to_node: loop.refine
+
+  # Loop body (internal to loop node)
+  # Loop automatically routes to body_node (model.refiner)
+
+  # Loop to evaluator
+  - from_node: loop.refine
+    to_node: model.evaluator
+
+  # Evaluator to transform
+  - from_node: model.evaluator
+    to_node: transform.extract_final
+
+  # Transform to gate
+  - from_node: transform.extract_final
+    to_node: gate.check_success
+
+  # Gate to exits
+  - from_node: gate.check_success
+    to_node: exit.success
+    condition: "matched_condition == 'high_quality'"
+
+  - from_node: gate.check_success
+    to_node: exit.needs_improvement
+    condition: "matched_condition == 'needs_work'"
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.needs_improvement
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.needs_improvement
+
+metadata:
+  description: |
+    This workflow demonstrates iterative refinement using loops.
+
+    Key features:
+    - Loop node with condition-based termination
+    - Quality score evaluation to guide iterations
+    - Extraction and validation of final output
+    - Success/partial-success exit paths
+
+    Best for:
+    - Content that benefits from multiple revision passes
+    - Tasks with measurable quality metrics
+    - Scenarios where initial output is rarely perfect
+
+    Example tasks:
+    - Writing polished documentation
+    - Crafting marketing copy
+    - Refining technical explanations

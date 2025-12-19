@@ -1,0 +1,398 @@
+# Multi-Stage Analysis Workflow
+# Demonstrates complex workflow combining routing, fanout, loops, and gates
+
+id: workflow.multi_stage_analysis
+version: "1.0.0"
+name: Multi-Stage Analysis Pipeline
+description: |
+  A comprehensive analysis workflow that routes by domain, performs parallel
+  analysis, iteratively refines each result, and validates before output.
+
+  Flow: Entry → Router → Fanout → Loop (per result) → Transform → Gate → Exit
+
+  Use case: Complex analytical tasks requiring multiple processing stages
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: Analysis Entry
+    description: Entry point for analysis requests
+
+  # Router determines analysis domain
+  - id: router.domain
+    type: router
+    name: Domain Router
+    description: Routes to appropriate analysis path
+    config:
+      model: qwen2.5:0.5b
+      routes:
+        - name: technical
+          description: Technical analysis of code, systems, or architecture
+          target: fanout.technical_analysis
+          priority: 2
+        - name: business
+          description: Business analysis of markets, strategy, or operations
+          target: fanout.business_analysis
+          priority: 2
+        - name: research
+          description: Research analysis of data, trends, or findings
+          target: fanout.research_analysis
+          priority: 1
+      default_route: research
+
+  # Technical analysis fanout
+  - id: fanout.technical_analysis
+    type: dynamic_fanout
+    name: Technical Analysis Fanout
+    description: Parallel technical analysis from multiple angles
+    config:
+      target_nodes:
+        - model.technical_architecture
+        - model.technical_security
+        - model.technical_performance
+      aggregation_strategy: all
+      parallel: true
+      timeout_ms: 45000
+
+  # Business analysis fanout
+  - id: fanout.business_analysis
+    type: dynamic_fanout
+    name: Business Analysis Fanout
+    description: Parallel business analysis from multiple perspectives
+    config:
+      target_nodes:
+        - model.business_strategy
+        - model.business_operations
+        - model.business_market
+      aggregation_strategy: all
+      parallel: true
+      timeout_ms: 45000
+
+  # Research analysis fanout
+  - id: fanout.research_analysis
+    type: dynamic_fanout
+    name: Research Analysis Fanout
+    description: Parallel research analysis
+    config:
+      target_nodes:
+        - model.research_quantitative
+        - model.research_qualitative
+      aggregation_strategy: all
+      parallel: true
+      timeout_ms: 45000
+
+  # Technical analysis models
+  - id: model.technical_architecture
+    type: model
+    name: Architecture Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.4
+      system_prompt: |
+        You are a software architecture expert. Analyze technical systems focusing on:
+        - System design and structure
+        - Component interactions
+        - Scalability and maintainability
+        Provide concise, actionable insights.
+
+  - id: model.technical_security
+    type: model
+    name: Security Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.3
+      system_prompt: |
+        You are a security expert. Analyze systems focusing on:
+        - Security vulnerabilities
+        - Risk assessment
+        - Best practices and mitigation
+        Provide clear security recommendations.
+
+  - id: model.technical_performance
+    type: model
+    name: Performance Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.4
+      system_prompt: |
+        You are a performance optimization expert. Analyze systems focusing on:
+        - Performance bottlenecks
+        - Resource utilization
+        - Optimization opportunities
+        Provide data-driven performance insights.
+
+  # Business analysis models
+  - id: model.business_strategy
+    type: model
+    name: Strategy Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: |
+        You are a business strategy consultant. Analyze situations focusing on:
+        - Strategic opportunities and threats
+        - Competitive positioning
+        - Long-term viability
+        Provide strategic recommendations.
+
+  - id: model.business_operations
+    type: model
+    name: Operations Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.4
+      system_prompt: |
+        You are an operations expert. Analyze processes focusing on:
+        - Operational efficiency
+        - Process optimization
+        - Resource allocation
+        Provide operational improvements.
+
+  - id: model.business_market
+    type: model
+    name: Market Analyst
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: |
+        You are a market analyst. Analyze markets focusing on:
+        - Market trends and dynamics
+        - Customer needs and behaviors
+        - Growth opportunities
+        Provide market insights.
+
+  # Research analysis models
+  - id: model.research_quantitative
+    type: model
+    name: Quantitative Researcher
+    config:
+      model: qwen2.5:3b
+      temperature: 0.3
+      system_prompt: |
+        You are a quantitative researcher. Analyze data focusing on:
+        - Statistical patterns and correlations
+        - Numerical trends
+        - Data-driven conclusions
+        Provide quantitative insights with evidence.
+
+  - id: model.research_qualitative
+    type: model
+    name: Qualitative Researcher
+    config:
+      model: qwen2.5:3b
+      temperature: 0.6
+      system_prompt: |
+        You are a qualitative researcher. Analyze information focusing on:
+        - Thematic patterns
+        - Contextual understanding
+        - Narrative insights
+        Provide rich qualitative analysis.
+
+  # Refinement loop for consolidated analysis
+  - id: loop.refine_analysis
+    type: loop
+    name: Analysis Refinement Loop
+    description: Refines aggregated analysis results
+    config:
+      body_node: model.synthesis
+      condition_type: fixed_count
+      fixed_count: 2
+      max_iterations: 3
+      collect_results: true
+      pass_iteration_number: true
+
+  # Synthesis model (used in loop)
+  - id: model.synthesis
+    type: model
+    name: Analysis Synthesizer
+    description: Synthesizes and refines multi-perspective analysis
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: |
+        You are an expert analyst synthesizing insights from multiple perspectives.
+
+        For iteration 1: Integrate all perspectives into a coherent analysis
+        For iteration 2+: Refine the synthesis by:
+        - Resolving contradictions
+        - Highlighting key insights
+        - Strengthening conclusions
+
+        Provide a comprehensive yet concise analysis.
+
+  # Transform to format final report
+  - id: transform.format_report
+    type: transform
+    name: Report Formatter
+    description: Formats analysis into structured report
+    config:
+      transforms:
+        - type: template
+          params:
+            template: |
+              ================================================================================
+              MULTI-STAGE ANALYSIS REPORT
+              ================================================================================
+
+              {content}
+
+              ================================================================================
+              This report synthesizes insights from multiple analytical perspectives and
+              has been iteratively refined for coherence and clarity.
+              ================================================================================
+
+  # Quality gate for final validation
+  - id: gate.quality_check
+    type: gate
+    name: Analysis Quality Gate
+    description: Validates analysis completeness and quality
+    config:
+      mode: llm
+      model: qwen2.5:0.5b
+      evaluation_prompt: |
+        Evaluate this analysis report for quality:
+
+        {content}
+
+        Does it:
+        1. Provide comprehensive coverage of the topic?
+        2. Include actionable insights?
+        3. Show clear reasoning and evidence?
+        4. Maintain coherence across perspectives?
+
+        Reply with ONLY one word: "pass" or "fail"
+      conditions:
+        - name: pass
+          expression: analysis meets quality standards
+          target: exit.success
+        - name: fail
+          expression: analysis needs improvement
+          target: exit.quality_failed
+
+  # Exit points
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    description: High-quality analysis delivered
+    config:
+      status: success
+
+  - id: exit.quality_failed
+    type: exit
+    name: Quality Check Failed
+    description: Analysis did not meet quality standards
+    config:
+      status: failure
+      message: Analysis failed quality validation
+
+edges:
+  # Entry to router
+  - from_node: entry.main
+    to_node: router.domain
+
+  # Router to fanouts
+  - from_node: router.domain
+    to_node: fanout.technical_analysis
+    condition: "route == 'technical'"
+
+  - from_node: router.domain
+    to_node: fanout.business_analysis
+    condition: "route == 'business'"
+
+  - from_node: router.domain
+    to_node: fanout.research_analysis
+    condition: "route == 'research'"
+
+  # Fanout to models (parallel, managed by fanout nodes)
+  - from_node: fanout.technical_analysis
+    to_node: model.technical_architecture
+
+  - from_node: fanout.technical_analysis
+    to_node: model.technical_security
+
+  - from_node: fanout.technical_analysis
+    to_node: model.technical_performance
+
+  - from_node: fanout.business_analysis
+    to_node: model.business_strategy
+
+  - from_node: fanout.business_analysis
+    to_node: model.business_operations
+
+  - from_node: fanout.business_analysis
+    to_node: model.business_market
+
+  - from_node: fanout.research_analysis
+    to_node: model.research_quantitative
+
+  - from_node: fanout.research_analysis
+    to_node: model.research_qualitative
+
+  # All fanouts to refinement loop
+  - from_node: fanout.technical_analysis
+    to_node: loop.refine_analysis
+
+  - from_node: fanout.business_analysis
+    to_node: loop.refine_analysis
+
+  - from_node: fanout.research_analysis
+    to_node: loop.refine_analysis
+
+  # Loop to transform
+  - from_node: loop.refine_analysis
+    to_node: transform.format_report
+
+  # Transform to gate
+  - from_node: transform.format_report
+    to_node: gate.quality_check
+
+  # Gate to exits
+  - from_node: gate.quality_check
+    to_node: exit.success
+    condition: "matched_condition == 'pass'"
+
+  - from_node: gate.quality_check
+    to_node: exit.quality_failed
+    condition: "matched_condition == 'fail'"
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.quality_failed
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.quality_failed
+
+metadata:
+  description: |
+    This workflow demonstrates a sophisticated multi-stage analysis pipeline.
+
+    Key features:
+    - Domain-based routing to specialized analysis paths
+    - Parallel execution of multiple analytical perspectives
+    - Iterative refinement through loop nodes
+    - Quality validation gates
+    - Professional report formatting
+
+    Architecture:
+    1. Router classifies analysis domain (technical/business/research)
+    2. Fanout dispatches to 2-3 specialized analysts in parallel
+    3. Loop refines the aggregated multi-perspective analysis
+    4. Transform formats into professional report
+    5. Gate validates quality before delivery
+
+    Best for:
+    - Complex analytical tasks requiring multiple perspectives
+    - Situations where domain expertise matters
+    - Reports that benefit from iterative refinement
+    - High-stakes analysis requiring validation
+
+    Example tasks:
+    - Comprehensive system architecture review
+    - Multi-faceted business case analysis
+    - Research synthesis from multiple methodologies

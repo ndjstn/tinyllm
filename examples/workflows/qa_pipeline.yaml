@@ -1,0 +1,211 @@
+# Question-Answering Pipeline
+# Demonstrates a typical QA workflow with routing, processing, and quality gates
+
+id: workflow.qa_pipeline
+version: "1.0.0"
+name: Question-Answering Pipeline
+description: |
+  A complete QA pipeline that routes questions by type, generates answers,
+  and validates quality before returning results.
+
+  Flow: Entry → Router (classify question type) → Model (answer) → Gate (quality check) → Exit
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: QA Entry
+    description: Entry point for user questions
+
+  # Router classifies question type
+  - id: router.question_type
+    type: router
+    name: Question Type Router
+    description: Classifies questions into categories
+    config:
+      model: qwen2.5:0.5b
+      routes:
+        - name: factual
+          description: Factual questions requiring specific information (who, what, when, where)
+          target: model.factual_qa
+          priority: 2
+        - name: analytical
+          description: Analytical questions requiring reasoning and explanation (why, how)
+          target: model.analytical_qa
+          priority: 2
+        - name: creative
+          description: Creative questions requiring brainstorming or open-ended thinking
+          target: model.creative_qa
+          priority: 1
+        - name: technical
+          description: Technical questions about code, algorithms, or systems
+          target: model.technical_qa
+          priority: 2
+      default_route: factual
+
+  # Specialized QA models
+  - id: model.factual_qa
+    type: model
+    name: Factual QA Specialist
+    description: Handles factual knowledge questions
+    config:
+      model: qwen2.5:3b
+      temperature: 0.3
+      system_prompt: |
+        You are a factual knowledge expert. Provide accurate, concise answers
+        based on established facts. When uncertain, acknowledge limitations.
+
+        Format your response as:
+        Answer: [Your answer]
+        Confidence: [High/Medium/Low]
+        Sources: [Relevant knowledge domain]
+
+  - id: model.analytical_qa
+    type: model
+    name: Analytical QA Specialist
+    description: Handles analytical and reasoning questions
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: |
+        You are an analytical reasoning expert. Break down complex questions
+        and provide well-reasoned explanations with clear logic.
+
+        Format your response as:
+        Analysis: [Step-by-step reasoning]
+        Answer: [Your conclusion]
+        Confidence: [High/Medium/Low]
+
+  - id: model.creative_qa
+    type: model
+    name: Creative QA Specialist
+    description: Handles creative and brainstorming questions
+    config:
+      model: qwen2.5:3b
+      temperature: 0.8
+      system_prompt: |
+        You are a creative thinking expert. Generate innovative ideas and
+        explore multiple perspectives. Be imaginative but practical.
+
+        Format your response as:
+        Ideas: [List of creative responses]
+        Best Option: [Your recommended approach]
+        Confidence: [High/Medium/Low]
+
+  - id: model.technical_qa
+    type: model
+    name: Technical QA Specialist
+    description: Handles technical and code-related questions
+    config:
+      model: qwen2.5:3b
+      temperature: 0.4
+      system_prompt: |
+        You are a technical expert. Provide precise technical answers with
+        code examples when relevant. Focus on accuracy and best practices.
+
+        Format your response as:
+        Explanation: [Technical explanation]
+        Example: [Code or technical example if applicable]
+        Confidence: [High/Medium/Low]
+
+  # Quality gate checks answer quality
+  - id: gate.quality_check
+    type: gate
+    name: Quality Gate
+    description: Validates answer quality and confidence
+    config:
+      mode: llm
+      model: qwen2.5:0.5b
+      evaluation_prompt: |
+        Evaluate the following QA response for quality.
+
+        Does it:
+        1. Directly answer the question?
+        2. Provide sufficient detail?
+        3. Show reasonable confidence?
+
+        Response to evaluate:
+        {content}
+
+        Reply with ONLY one word:
+        - "pass" if the response meets quality standards
+        - "fail" if it needs improvement
+      conditions:
+        - name: pass
+          expression: quality check passed
+          target: exit.success
+        - name: fail
+          expression: quality check failed
+          target: exit.low_quality
+
+  # Exit points
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    description: High-quality answer provided
+    config:
+      status: success
+
+  - id: exit.low_quality
+    type: exit
+    name: Low Quality Exit
+    description: Answer failed quality check
+    config:
+      status: failure
+      message: Answer did not meet quality standards
+
+edges:
+  # Entry to router
+  - from_node: entry.main
+    to_node: router.question_type
+
+  # Router to specialized models (determined by routing logic)
+  - from_node: router.question_type
+    to_node: model.factual_qa
+    condition: "route == 'factual'"
+
+  - from_node: router.question_type
+    to_node: model.analytical_qa
+    condition: "route == 'analytical'"
+
+  - from_node: router.question_type
+    to_node: model.creative_qa
+    condition: "route == 'creative'"
+
+  - from_node: router.question_type
+    to_node: model.technical_qa
+    condition: "route == 'technical'"
+
+  # All models to quality gate
+  - from_node: model.factual_qa
+    to_node: gate.quality_check
+
+  - from_node: model.analytical_qa
+    to_node: gate.quality_check
+
+  - from_node: model.creative_qa
+    to_node: gate.quality_check
+
+  - from_node: model.technical_qa
+    to_node: gate.quality_check
+
+  # Gate to exits (determined by gate evaluation)
+  - from_node: gate.quality_check
+    to_node: exit.success
+    condition: "matched_condition == 'pass'"
+
+  - from_node: gate.quality_check
+    to_node: exit.low_quality
+    condition: "matched_condition == 'fail'"
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.low_quality
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.low_quality
