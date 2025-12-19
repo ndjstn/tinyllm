@@ -124,6 +124,8 @@ def register_default_tools() -> None:
     """
     from tinyllm.tools.calculator import CalculatorTool
     from tinyllm.tools.code_executor import CodeExecutorTool
+    from tinyllm.tools.web_search import WebSearchTool
 
     ToolRegistry.register(CalculatorTool())
     ToolRegistry.register(CodeExecutorTool())
+    ToolRegistry.register(WebSearchTool())

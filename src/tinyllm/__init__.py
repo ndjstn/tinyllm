@@ -15,6 +15,16 @@ from tinyllm.logging import (
     unbind_context,
 )
 
+# Agent exports
+from tinyllm.agents import (
+    ActionResult,
+    ReActAgent,
+    ReActConfig,
+    ReActStep,
+    ReActStepType,
+    ToolExecutionError,
+)
+
 # Core exports
 from tinyllm.core import (
     BaseNode,
@@ -65,6 +75,7 @@ from tinyllm.tools import (
     ToolConfig,
     ToolMetadata,
     ToolRegistry,
+    WebSearchTool,
     register_default_tools,
 )
 
@@ -127,6 +138,13 @@ __all__ = [
     "bind_context",
     "unbind_context",
     "clear_context",
+    # Agents
+    "ReActAgent",
+    "ReActConfig",
+    "ReActStep",
+    "ReActStepType",
+    "ActionResult",
+    "ToolExecutionError",
     # Metrics
     "MetricsCollector",
     "get_metrics_collector",
@@ -174,6 +192,7 @@ __all__ = [
     "ToolConfig",
     "ToolMetadata",
     "ToolRegistry",
+    "WebSearchTool",
     "register_default_tools",
     # Prompts
     "ASSISTANT_IDENTITY",

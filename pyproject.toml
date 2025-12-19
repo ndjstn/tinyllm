@@ -148,6 +148,7 @@ markers = [
     "load: marks tests as load tests",
     "chaos: marks tests as chaos engineering tests",
     "perf: marks tests as performance tests",
+    "asyncio: marks tests as async tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

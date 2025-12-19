@@ -9,6 +9,22 @@ from tinyllm.tools.code_executor import (
     CodeExecutorTool,
 )
 from tinyllm.tools.registry import ToolRegistry, register_default_tools
+from tinyllm.tools.web_search import (
+    BraveSearchProvider,
+    ContentFetcher,
+    DuckDuckGoProvider,
+    PageContent,
+    RateLimiter,
+    ResultDeduplicator,
+    SearchCache,
+    SearchProvider,
+    SearchResult,
+    SearXNGProvider,
+    WebSearchConfig,
+    WebSearchInput,
+    WebSearchOutput,
+    WebSearchTool,
+)
 
 __all__ = [
     # Base
@@ -27,4 +43,19 @@ __all__ = [
     "CodeExecutorInput",
     "CodeExecutorOutput",
     "CodeExecutorConfig",
+    # Web Search
+    "WebSearchTool",
+    "WebSearchInput",
+    "WebSearchOutput",
+    "WebSearchConfig",
+    "SearchResult",
+    "PageContent",
+    "SearchProvider",
+    "SearXNGProvider",
+    "DuckDuckGoProvider",
+    "BraveSearchProvider",
+    "SearchCache",
+    "RateLimiter",
+    "ResultDeduplicator",
+    "ContentFetcher",
 ]
