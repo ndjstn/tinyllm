@@ -7,6 +7,7 @@ TinyLLM's graph execution, node operations, and LLM API calls.
 import asyncio
 import functools
 import time
+import uuid
 from contextlib import contextmanager
 from typing import Any, Callable, Optional, TypeVar, cast
 
@@ -407,6 +408,86 @@ def get_current_span_id() -> Optional[str]:
     return None
 
 
+# Correlation ID management for distributed tracing
+_correlation_id_key = "correlation_id"
+
+
+def generate_correlation_id() -> str:
+    """Generate a new correlation ID for distributed tracing.
+
+    Returns:
+        A unique correlation ID (UUID v4 format).
+    """
+    return str(uuid.uuid4())
+
+
+def set_correlation_id(correlation_id: str) -> None:
+    """Set correlation ID for the current context.
+
+    This propagates the correlation ID across service boundaries and
+    correlates logs, traces, and metrics for a single request flow.
+
+    Args:
+        correlation_id: The correlation ID to set.
+    """
+    # Add to span attributes if tracing is enabled
+    set_span_attribute(_correlation_id_key, correlation_id)
+
+    # Add to logging context
+    bind_context(correlation_id=correlation_id)
+
+
+def get_correlation_id() -> Optional[str]:
+    """Get the current correlation ID.
+
+    Returns:
+        Current correlation ID, or None if not set.
+    """
+    if not is_telemetry_enabled():
+        return None
+
+    span = trace.get_current_span()
+    if span and span.is_recording():
+        # Try to get from span attributes
+        span_context = span.get_span_context()
+        if span_context and span_context.is_valid:
+            # Use trace ID as correlation ID if not explicitly set
+            return format(span_context.trace_id, "032x")
+
+    return None
+
+
+def propagate_correlation_id(headers: dict[str, str]) -> dict[str, str]:
+    """Propagate correlation ID to outgoing HTTP headers.
+
+    Args:
+        headers: Existing headers dictionary.
+
+    Returns:
+        Headers with correlation ID added.
+    """
+    correlation_id = get_correlation_id()
+    if correlation_id:
+        headers["X-Correlation-ID"] = correlation_id
+    return headers
+
+
+def extract_correlation_id(headers: dict[str, str]) -> Optional[str]:
+    """Extract correlation ID from incoming HTTP headers.
+
+    Args:
+        headers: Incoming headers dictionary.
+
+    Returns:
+        Correlation ID if present, None otherwise.
+    """
+    # Try multiple header formats
+    for header in ["X-Correlation-ID", "x-correlation-id", "correlation-id"]:
+        if header in headers:
+            return headers[header]
+    return None
+
+
 # Convenience functions for common trace patterns
 
 def trace_executor_execution(trace_id: str, graph_id: str, task_content: str):
@@ -485,6 +566,11 @@ __all__ = [
     "set_span_error",
     "get_current_trace_id",
     "get_current_span_id",
+    "generate_correlation_id",
+    "set_correlation_id",
+    "get_correlation_id",
+    "propagate_correlation_id",
+    "extract_correlation_id",
     "trace_executor_execution",
     "trace_node_execution",
     "trace_llm_request",
