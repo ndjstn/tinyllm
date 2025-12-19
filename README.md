@@ -59,6 +59,28 @@ TinyLLM treats small language models (≤3B parameters) as **intelligent neurons
 
 ## Quick Start
 
+### Docker (Recommended)
+
+The fastest way to get started is with Docker:
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Start the stack
+make docker-up
+
+# Pull models
+make docker-pull-models
+
+# Run a query
+docker-compose exec tinyllm tinyllm run "What is 2+2?"
+```
+
+See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for details or [DOCKER.md](DOCKER.md) for full documentation.
+
+### Local Installation
+
 ### Prerequisites
 
 - Python 3.11+
@@ -100,6 +122,27 @@ uv run tinyllm run --trace "Write a Python function to check if a number is prim
 # Interactive mode
 uv run tinyllm chat
 ```
+
+### Running Tests
+
+The project uses pytest for testing. Make sure to run tests from the virtual environment to avoid dependency conflicts:
+
+```bash
+# Using the Makefile (recommended)
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-integration  # Run integration tests only
+make test-cov          # Run with coverage report
+
+# Or using the test runner script
+./run_tests.sh         # Run all tests
+./run_tests.sh tests/unit/  # Run specific test directory
+
+# Or directly with venv
+.venv/bin/python -m pytest tests/ -v
+```
+
+Note: Do not use the system `pytest` command directly. The project requires specific versions of pytest (8.0+) and pytest-asyncio that must be installed in the virtual environment.
 
 ---
 
