@@ -17,6 +17,7 @@ class NodeType(str, Enum):
     EXIT = "exit"
     ROUTER = "router"
     MODEL = "model"
+    REASONING = "reasoning"
     TOOL = "tool"
     GATE = "gate"
     TRANSFORM = "transform"
