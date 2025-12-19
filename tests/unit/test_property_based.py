@@ -11,7 +11,7 @@ import pytest
 from hypothesis import given, strategies as st, settings, assume, HealthCheck
 from hypothesis.stateful import RuleBasedStateMachine, rule, invariant, initialize
 
-from tinyllm.core.context import Context
+from tinyllm.core.context import ExecutionContext
 from tinyllm.core.graph import Graph
 from tinyllm.core.node import Node
 from tinyllm.nodes.transform import TransformNode
