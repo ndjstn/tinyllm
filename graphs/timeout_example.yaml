@@ -1,0 +1,208 @@
+# Timeout Wrapper Example
+# Demonstrates the timeout node wrapping other nodes with different timeout strategies
+
+id: graph.timeout_example
+version: "1.0.0"
+name: Timeout Wrapper Example
+description: Example showing timeout node wrapping with error, fallback, and skip strategies
+
+metadata:
+  author: TinyLLM
+  tags:
+    - timeout
+    - error-handling
+    - resilience
+
+nodes:
+  # Entry point
+  - id: entry.main
+    type: entry
+    name: Main Entry
+    config:
+      required_fields: []
+
+  # Router to demonstrate different timeout strategies
+  - id: router.strategy
+    type: router
+    name: Strategy Router
+    config:
+      model: qwen2.5:0.5b
+      prompt_id: routing/task_router
+      routes:
+        - name: fast
+          description: Fast processing tasks
+          target: timeout.fast
+        - name: slow_error
+          description: Slow tasks that should error on timeout
+          target: timeout.error_strategy
+        - name: slow_fallback
+          description: Slow tasks with fallback response
+          target: timeout.fallback_strategy
+        - name: slow_skip
+          description: Slow tasks that should skip on timeout
+          target: timeout.skip_strategy
+
+  # Timeout with short timeout - should succeed for fast tasks
+  - id: timeout.fast
+    type: timeout
+    name: Fast Timeout Wrapper
+    config:
+      inner_node: model.process
+      timeout_ms: 10000  # 10 seconds
+      on_timeout: error
+      retry_count: 2
+      retry_delay_ms: 1000
+      propagate_metadata: true
+
+  # Timeout with error strategy
+  - id: timeout.error_strategy
+    type: timeout
+    name: Error On Timeout
+    config:
+      inner_node: model.slow_process
+      timeout_ms: 5000  # 5 seconds
+      on_timeout: error
+      retry_count: 3
+      retry_delay_ms: 500
+      propagate_metadata: true
+
+  # Timeout with fallback strategy
+  - id: timeout.fallback_strategy
+    type: timeout
+    name: Fallback On Timeout
+    config:
+      inner_node: model.slow_process
+      timeout_ms: 5000  # 5 seconds
+      on_timeout: fallback
+      fallback_response: "I apologize, but the request is taking longer than expected. Please try again with a simpler query or contact support if the issue persists."
+      retry_count: 1
+      retry_delay_ms: 1000
+      propagate_metadata: true
+
+  # Timeout with skip strategy
+  - id: timeout.skip_strategy
+    type: timeout
+    name: Skip On Timeout
+    config:
+      inner_node: model.slow_process
+      timeout_ms: 3000  # 3 seconds
+      on_timeout: skip
+      retry_count: 0
+      propagate_metadata: true
+
+  # Model nodes (wrapped by timeout)
+  - id: model.process
+    type: model
+    name: Fast Model
+    config:
+      model: qwen2.5:0.5b
+      temperature: 0.7
+      max_tokens: 500
+
+  - id: model.slow_process
+    type: model
+    name: Slow Model (simulated)
+    config:
+      model: qwen2.5:3b  # Larger model, potentially slower
+      temperature: 0.7
+      max_tokens: 1000
+
+  # Gate to check timeout results
+  - id: gate.timeout_check
+    type: gate
+    name: Timeout Result Check
+    config:
+      mode: expression
+      conditions:
+        - name: timeout_occurred
+          expression: "metadata.get('timeout', {}).get('timed_out', False)"
+          target: exit.timeout
+        - name: fallback_used
+          expression: "metadata.get('fallback', False)"
+          target: exit.fallback
+        - name: success
+          expression: "True"
+          target: exit.success
+      default_target: exit.success
+
+  # Exit points
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    config:
+      status: success
+
+  - id: exit.timeout
+    type: exit
+    name: Timeout Exit
+    config:
+      status: timeout
+
+  - id: exit.fallback
+    type: exit
+    name: Fallback Exit
+    config:
+      status: fallback
+
+edges:
+  # Entry to router
+  - from_node: entry.main
+    to_node: router.strategy
+    weight: 1.0
+
+  # Router to timeout nodes
+  - from_node: router.strategy
+    to_node: timeout.fast
+    condition: "route == 'fast'"
+
+  - from_node: router.strategy
+    to_node: timeout.error_strategy
+    condition: "route == 'slow_error'"
+
+  - from_node: router.strategy
+    to_node: timeout.fallback_strategy
+    condition: "route == 'slow_fallback'"
+
+  - from_node: router.strategy
+    to_node: timeout.skip_strategy
+    condition: "route == 'slow_skip'"
+
+  # Timeout nodes to gate
+  - from_node: timeout.fast
+    to_node: gate.timeout_check
+
+  - from_node: timeout.error_strategy
+    to_node: gate.timeout_check
+
+  - from_node: timeout.fallback_strategy
+    to_node: gate.timeout_check
+
+  - from_node: timeout.skip_strategy
+    to_node: gate.timeout_check
+
+  # Gate to exits
+  - from_node: gate.timeout_check
+    to_node: exit.success
+    condition: "matched_condition == 'success'"
+
+  - from_node: gate.timeout_check
+    to_node: exit.timeout
+    condition: "matched_condition == 'timeout_occurred'"
+
+  - from_node: gate.timeout_check
+    to_node: exit.fallback
+    condition: "matched_condition == 'fallback_used'"
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.timeout
+  - exit.fallback
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.timeout
+  - exit.fallback

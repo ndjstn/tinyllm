@@ -1,0 +1,54 @@
+# Simple Timeout Example
+# Basic demonstration of timeout node with fallback response
+
+id: graph.timeout_simple
+version: "1.0.0"
+name: Simple Timeout Example
+description: Simple example of wrapping a model node with timeout and fallback
+
+nodes:
+  - id: entry.main
+    type: entry
+    name: Main Entry
+    config:
+      required_fields: []
+
+  # Timeout wrapper with fallback
+  - id: timeout.wrapper
+    type: timeout
+    name: Model Timeout Wrapper
+    config:
+      inner_node: model.qa
+      timeout_ms: 30000  # 30 seconds
+      on_timeout: fallback
+      fallback_response: "The request took too long to process. Please try a shorter question."
+      retry_count: 2
+      retry_delay_ms: 1000
+
+  # Model node being wrapped
+  - id: model.qa
+    type: model
+    name: Q&A Model
+    config:
+      model: qwen2.5:0.5b
+      temperature: 0.7
+      max_tokens: 500
+
+  - id: exit.main
+    type: exit
+    name: Main Exit
+    config:
+      status: success
+
+edges:
+  - from_node: entry.main
+    to_node: timeout.wrapper
+
+  - from_node: timeout.wrapper
+    to_node: exit.main
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.main
