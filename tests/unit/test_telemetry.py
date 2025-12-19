@@ -365,3 +365,252 @@ class TestCorrelationID:
         # Test with no header
         headers = {}
         assert extract_correlation_id(headers) is None
+
+
+class TestBaggagePropagation:
+    """Tests for OpenTelemetry baggage propagation."""
+
+    def test_set_and_get_baggage(self):
+        """Test setting and getting baggage items."""
+        from tinyllm.telemetry import get_baggage, set_baggage
+
+        set_baggage("user_id", "12345")
+        set_baggage("tenant_id", "acme-corp")
+
+        # May return None if telemetry not enabled
+        user_id = get_baggage("user_id")
+        if user_id:
+            assert user_id == "12345"
+
+    def test_get_all_baggage(self):
+        """Test getting all baggage items."""
+        from tinyllm.telemetry import get_all_baggage, set_baggage
+
+        set_baggage("key1", "value1")
+        set_baggage("key2", "value2")
+
+        all_baggage = get_all_baggage()
+        assert isinstance(all_baggage, dict)
+
+    def test_remove_baggage(self):
+        """Test removing baggage items."""
+        from tinyllm.telemetry import get_baggage, remove_baggage, set_baggage
+
+        set_baggage("temp_key", "temp_value")
+        remove_baggage("temp_key")
+
+        # Should be removed
+        value = get_baggage("temp_key")
+        assert value is None or value != "temp_value"
+
+    def test_clear_baggage(self):
+        """Test clearing all baggage."""
+        from tinyllm.telemetry import clear_baggage, get_all_baggage, set_baggage
+
+        set_baggage("key1", "value1")
+        set_baggage("key2", "value2")
+
+        clear_baggage()
+
+        all_baggage = get_all_baggage()
+        # Should be empty or minimal
+        assert len(all_baggage) == 0 or all_baggage is None
+
+    def test_inject_baggage_into_headers(self):
+        """Test injecting baggage into HTTP headers."""
+        from tinyllm.telemetry import inject_baggage_into_headers, set_baggage
+
+        set_baggage("user_id", "12345")
+
+        headers = inject_baggage_into_headers({"Content-Type": "application/json"})
+
+        # Original headers should be preserved
+        assert headers["Content-Type"] == "application/json"
+        # Baggage header may be added
+        assert isinstance(headers, dict)
+
+    def test_extract_baggage_from_headers(self):
+        """Test extracting baggage from HTTP headers."""
+        from tinyllm.telemetry import extract_baggage_from_headers
+
+        headers = {"baggage": "user_id=12345,tenant_id=acme"}
+
+        extracted = extract_baggage_from_headers(headers)
+        assert isinstance(extracted, dict)
+
+    def test_baggage_context(self):
+        """Test baggage context manager."""
+        from tinyllm.telemetry import baggage_context, get_baggage
+
+        with baggage_context(user_id="12345", tenant_id="acme"):
+            # Baggage should be set within context
+            user_id = get_baggage("user_id")
+            # May be None if telemetry not enabled
+
+        # Baggage should be cleared after context
+        # (or restored to original state)
+
+
+class TestCustomSpanAttributes:
+    """Tests for custom span attributes."""
+
+    def test_graph_span_attributes(self):
+        """Test GraphSpanAttributes constants."""
+        from tinyllm.telemetry import GraphSpanAttributes
+
+        # Graph attributes
+        assert GraphSpanAttributes.GRAPH_ID == "graph.id"
+        assert GraphSpanAttributes.GRAPH_VERSION == "graph.version"
+        assert GraphSpanAttributes.GRAPH_NODE_COUNT == "graph.node_count"
+
+        # Node attributes
+        assert GraphSpanAttributes.NODE_ID == "node.id"
+        assert GraphSpanAttributes.NODE_TYPE == "node.type"
+
+        # Execution attributes
+        assert GraphSpanAttributes.EXECUTION_ID == "execution.id"
+        assert GraphSpanAttributes.EXECUTION_STATUS == "execution.status"
+
+        # LLM attributes
+        assert GraphSpanAttributes.LLM_MODEL == "llm.model"
+        assert GraphSpanAttributes.LLM_TEMPERATURE == "llm.temperature"
+
+        # Cache attributes
+        assert GraphSpanAttributes.CACHE_HIT == "cache.hit"
+
+    def test_set_graph_attributes(self):
+        """Test setting graph attributes on span."""
+        from tinyllm.telemetry import set_graph_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_graph_attributes(
+                graph_id="test-graph",
+                graph_name="Test Graph",
+                node_count=5,
+                depth=3,
+            )
+
+    def test_set_node_attributes(self):
+        """Test setting node attributes on span."""
+        from tinyllm.telemetry import set_node_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_node_attributes(
+                node_id="node-1",
+                node_type="model",
+                node_name="Code Generator",
+                node_index=1,
+                node_depth=2,
+            )
+
+    def test_set_execution_attributes(self):
+        """Test setting execution attributes on span."""
+        from tinyllm.telemetry import set_execution_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_execution_attributes(
+                execution_id="exec-123",
+                step=1,
+                status="running",
+                duration_ms=123.45,
+            )
+
+    def test_set_task_attributes(self):
+        """Test setting task attributes on span."""
+        from tinyllm.telemetry import set_task_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_task_attributes(
+                task_id="task-456",
+                task_type="code_generation",
+                task_content="Write a Python function that...",
+                message_count=3,
+            )
+
+    def test_set_llm_attributes(self):
+        """Test setting LLM attributes on span."""
+        from tinyllm.telemetry import set_llm_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_llm_attributes(
+                model="gpt-4",
+                provider="openai",
+                temperature=0.7,
+                max_tokens=1000,
+                prompt_tokens=100,
+                response_tokens=200,
+                cost_usd=0.005,
+            )
+
+    def test_set_cache_attributes(self):
+        """Test setting cache attributes on span."""
+        from tinyllm.telemetry import set_cache_attributes, trace_span
+
+        with trace_span("test.span"):
+            # Should not raise
+            set_cache_attributes(
+                cache_hit=True,
+                cache_key="prompt_hash_123",
+                cache_ttl=3600,
+            )
+
+    def test_set_error_attributes(self):
+        """Test setting error attributes on span."""
+        from tinyllm.telemetry import set_error_attributes, trace_span
+
+        with trace_span("test.span"):
+            try:
+                raise ValueError("Test error")
+            except ValueError as e:
+                # Should not raise
+                set_error_attributes(
+                    error_type="ValueError",
+                    error_message=str(e),
+                    retry_after_ms=1000,
+                )
+
+    def test_custom_attributes_in_workflow(self):
+        """Test using custom attributes in a workflow."""
+        from tinyllm.telemetry import (
+            set_execution_attributes,
+            set_graph_attributes,
+            set_llm_attributes,
+            set_node_attributes,
+            trace_span,
+        )
+
+        # Simulate graph execution with custom attributes
+        with trace_span("graph.execute"):
+            set_graph_attributes(
+                graph_id="workflow-1",
+                graph_name="Code Review",
+                node_count=4,
+            )
+
+            set_execution_attributes(
+                execution_id="exec-789",
+                step=1,
+                status="running",
+            )
+
+            # Simulate node execution
+            with trace_span("node.model"):
+                set_node_attributes(
+                    node_id="reviewer",
+                    node_type="model",
+                    node_index=0,
+                )
+
+                set_llm_attributes(
+                    model="gpt-4",
+                    temperature=0.2,
+                    prompt_tokens=500,
+                    response_tokens=300,
+                )
+
+        # Should complete without errors

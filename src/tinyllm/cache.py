@@ -61,19 +61,37 @@ class CacheTier(Enum):
 
 @dataclass
 class CacheMetrics:
-    """Cache performance metrics."""
+    """Cache performance metrics with advanced tracking."""
 
     hits: int = 0
     misses: int = 0
     sets: int = 0
     evictions: int = 0
     errors: int = 0
+    similarity_hits: int = 0
+    similarity_misses: int = 0
+    compressed_bytes: int = 0
+    uncompressed_bytes: int = 0
+    estimated_cost_saved: float = 0.0
 
     @property
     def hit_rate(self) -> float:
         """Calculate cache hit rate."""
         total = self.hits + self.misses
         return self.hits / total if total > 0 else 0.0
+
+    @property
+    def similarity_hit_rate(self) -> float:
+        """Calculate semantic similarity hit rate."""
+        total = self.similarity_hits + self.similarity_misses
+        return self.similarity_hits / total if total > 0 else 0.0
+
+    @property
+    def compression_ratio(self) -> float:
+        """Calculate compression ratio."""
+        if self.uncompressed_bytes == 0:
+            return 0.0
+        return self.compressed_bytes / self.uncompressed_bytes
 
     @property
     def total_requests(self) -> int:
@@ -90,6 +108,13 @@ class CacheMetrics:
             "errors": self.errors,
             "hit_rate": self.hit_rate,
             "total_requests": self.total_requests,
+            "similarity_hits": self.similarity_hits,
+            "similarity_misses": self.similarity_misses,
+            "similarity_hit_rate": self.similarity_hit_rate,
+            "compressed_bytes": self.compressed_bytes,
+            "uncompressed_bytes": self.uncompressed_bytes,
+            "compression_ratio": self.compression_ratio,
+            "estimated_cost_saved": self.estimated_cost_saved,
         }
 
 

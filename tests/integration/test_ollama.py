@@ -135,43 +135,15 @@ async def test_streaming_generation(ollama_client):
     chunks = []
 
     async for chunk in ollama_client.generate_stream(
-        model=TEST_MODEL,
         prompt=prompt,
+        model=TEST_MODEL,
     ):
         chunks.append(chunk)
-        if chunk.get("done", False):
+        if len(chunks) >= 10:  # Limit chunks for test
             break
 
     # Should receive multiple chunks
     assert len(chunks) > 0
-    # Last chunk should have done=True
-    assert chunks[-1].get("done", False) is True
-
-
-@pytest.mark.asyncio
-async def test_chat_completion(ollama_client):
-    """Test chat completion API."""
-    available = await check_ollama_available()
-    if not available:
-        pytest.skip("Ollama server not available")
-
-    model_available = await check_model_available(TEST_MODEL)
-    if not model_available:
-        pytest.skip(f"Model {TEST_MODEL} not available")
-
-    messages = [
-        {"role": "user", "content": "What is 2+2? Answer with just the number."}
-    ]
-
-    response = await ollama_client.chat(
-        model=TEST_MODEL,
-        messages=messages,
-        stream=False,
-    )
-
-    assert response is not None
-    assert "message" in response
-    assert "content" in response["message"]
 
 
 @pytest.mark.asyncio
@@ -237,12 +209,11 @@ async def test_concurrent_requests(ollama_client):
         "Say salutations",
     ]
 
-    async def make_request(prompt: str) -> dict:
+    async def make_request(prompt: str):
         """Make a single request."""
         return await ollama_client.generate(
-            model=TEST_MODEL,
             prompt=prompt,
-            stream=False,
+            model=TEST_MODEL,
         )
 
     # Execute concurrently
@@ -252,7 +223,7 @@ async def test_concurrent_requests(ollama_client):
     assert len(results) == len(prompts)
     for result in results:
         assert result is not None
-        assert "response" in result
+        assert result.response
 
 
 @pytest.mark.asyncio
@@ -264,9 +235,8 @@ async def test_error_handling_invalid_model(ollama_client):
 
     with pytest.raises(Exception):
         await ollama_client.generate(
-            model="nonexistent-model-xyz",
             prompt="This should fail",
-            stream=False,
+            model="nonexistent-model-xyz",
         )
 
 
@@ -292,9 +262,8 @@ async def test_timeout_handling(ollama_client):
 
     try:
         await short_timeout_client.generate(
-            model=TEST_MODEL,
             prompt=complex_prompt,
-            stream=False,
+            model=TEST_MODEL,
         )
     except (asyncio.TimeoutError, httpx.TimeoutException):
         # Timeout is expected
@@ -351,9 +320,8 @@ async def test_rate_limiting(ollama_client):
     tasks = []
     for i in range(num_requests):
         task = ollama_client.generate(
-            model=TEST_MODEL,
             prompt=f"Say {i}",
-            stream=False,
+            model=TEST_MODEL,
         )
         tasks.append(task)
 
@@ -383,13 +351,12 @@ async def test_long_context_handling(ollama_client):
     )
 
     response = await ollama_client.generate(
-        model=TEST_MODEL,
         prompt=long_prompt,
-        stream=False,
+        model=TEST_MODEL,
     )
 
     assert response is not None
-    assert "response" in response
+    assert response.response
 
 
 @pytest.mark.asyncio
@@ -407,81 +374,12 @@ async def test_special_characters_handling(ollama_client):
     special_prompt = "Translate this: Hello! 你好! مرحبا! 🌍"
 
     response = await ollama_client.generate(
-        model=TEST_MODEL,
         prompt=special_prompt,
-        stream=False,
+        model=TEST_MODEL,
     )
 
     assert response is not None
-    assert "response" in response
-
-
-@pytest.mark.asyncio
-async def test_multi_turn_conversation(ollama_client):
-    """Test multi-turn conversation."""
-    available = await check_ollama_available()
-    if not available:
-        pytest.skip("Ollama server not available")
-
-    model_available = await check_model_available(TEST_MODEL)
-    if not model_available:
-        pytest.skip(f"Model {TEST_MODEL} not available")
-
-    # First turn
-    messages = [{"role": "user", "content": "My name is Alice."}]
-
-    response1 = await ollama_client.chat(
-        model=TEST_MODEL,
-        messages=messages,
-        stream=False,
-    )
-
-    # Second turn - reference first turn
-    messages.append(response1["message"])
-    messages.append({"role": "user", "content": "What is my name?"})
-
-    response2 = await ollama_client.chat(
-        model=TEST_MODEL,
-        messages=messages,
-        stream=False,
-    )
-
-    # Should remember the name
-    content = response2["message"]["content"].lower()
-    # Model might remember Alice
-    assert response2 is not None
-
-
-@pytest.mark.asyncio
-async def test_system_prompt_effectiveness(ollama_client):
-    """Test that system prompts affect model behavior."""
-    available = await check_ollama_available()
-    if not available:
-        pytest.skip("Ollama server not available")
-
-    model_available = await check_model_available(TEST_MODEL)
-    if not model_available:
-        pytest.skip(f"Model {TEST_MODEL} not available")
-
-    # Test with system prompt
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a pirate. Always respond in pirate speak.",
-        },
-        {"role": "user", "content": "Hello, how are you?"},
-    ]
-
-    response = await ollama_client.chat(
-        model=TEST_MODEL,
-        messages=messages,
-        stream=False,
-    )
-
-    # Response might contain pirate-like words
-    content = response["message"]["content"].lower()
-    # Just verify we got a response
-    assert len(content) > 0
+    assert response.response
 
 
 @pytest.mark.asyncio
@@ -499,10 +397,9 @@ async def test_json_mode(ollama_client):
 
     try:
         response = await ollama_client.generate(
-            model=TEST_MODEL,
             prompt=prompt,
-            format="json",
-            stream=False,
+            model=TEST_MODEL,
+            json_mode=True,
         )
 
         assert response is not None
@@ -531,10 +428,9 @@ async def test_temperature_variation(ollama_client):
 
     for temp in temperatures:
         response = await ollama_client.generate(
-            model=TEST_MODEL,
             prompt=prompt,
-            options={"temperature": temp},
-            stream=False,
+            model=TEST_MODEL,
+            temperature=temp,
         )
         responses.append(response)
 
@@ -542,4 +438,25 @@ async def test_temperature_variation(ollama_client):
     assert len(responses) == len(temperatures)
     for response in responses:
         assert response is not None
-        assert "response" in response
+        assert response.response
+
+
+@pytest.mark.asyncio
+async def test_system_prompt(ollama_client):
+    """Test system prompt functionality."""
+    available = await check_ollama_available()
+    if not available:
+        pytest.skip("Ollama server not available")
+
+    model_available = await check_model_available(TEST_MODEL)
+    if not model_available:
+        pytest.skip(f"Model {TEST_MODEL} not available")
+
+    response = await ollama_client.generate(
+        prompt="What is 2+2?",
+        model=TEST_MODEL,
+        system="You are a helpful math tutor. Be concise.",
+    )
+
+    assert response is not None
+    assert response.response

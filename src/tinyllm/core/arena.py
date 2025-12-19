@@ -200,17 +200,32 @@ class Arena(Generic[T]):
         Returns:
             ArenaStats with current usage metrics.
         """
-        total_allocated = len(self._chunks) * self.chunk_size + self.chunk_size
-        utilization = self._total_size / total_allocated if total_allocated > 0 else 0.0
+        # Count chunks (include current if it has any data)
+        chunk_count = len(self._chunks)
+        if self._current_chunk:
+            chunk_count += 1
+
+        # Calculate total allocated space
+        # Only count allocated chunks
+        if chunk_count == 0:
+            total_allocated = self.chunk_size  # At least one chunk space
+        else:
+            total_allocated = chunk_count * self.chunk_size
+
+        # Calculate utilization (cap at 1.0)
+        utilization = min(1.0, self._total_size / total_allocated if total_allocated > 0 else 0.0)
 
         # Calculate fragmentation (wasted space in current chunk)
-        wasted = self.chunk_size - self._current_size
-        fragmentation = wasted / self.chunk_size if self.chunk_size > 0 else 0.0
+        if self._current_chunk or chunk_count > 0:
+            wasted = self.chunk_size - self._current_size
+            fragmentation = max(0.0, min(1.0, wasted / self.chunk_size if self.chunk_size > 0 else 0.0))
+        else:
+            fragmentation = 1.0  # Empty arena is fully fragmented
 
         return ArenaStats(
             arena_id=self.arena_id,
             chunk_size=self.chunk_size,
-            chunk_count=len(self._chunks) + (1 if self._current_chunk else 0),
+            chunk_count=chunk_count,
             object_count=self._object_count,
             total_allocated=total_allocated,
             total_used=self._total_size,

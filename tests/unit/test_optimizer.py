@@ -13,7 +13,8 @@ def simple_linear_graph():
     """Create a simple linear graph."""
     graph_def = GraphDefinition(
         id="linear",
-        version="1.0",
+        version="1.0.0",
+        name="Linear Test Graph",
         nodes=[
             NodeDefinition(id="input", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="process", type=NodeType.TRANSFORM, config={}),
@@ -39,7 +40,8 @@ def branching_graph():
     """Create a graph with conditional branches."""
     graph_def = GraphDefinition(
         id="branching",
-        version="1.0",
+        version="1.0.0",
+        name="Branching Test Graph",
         nodes=[
             NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="branch_a", type=NodeType.TRANSFORM, config={}),
@@ -68,7 +70,8 @@ def parallel_graph():
     """Create a graph with parallel execution paths."""
     graph_def = GraphDefinition(
         id="parallel",
-        version="1.0",
+        version="1.0.0",
+        name="Parallel Test Graph",
         nodes=[
             NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="parallel_1", type=NodeType.TRANSFORM, config={}),
@@ -100,7 +103,8 @@ def graph_with_unreachable():
     """Create a graph with unreachable nodes."""
     graph_def = GraphDefinition(
         id="unreachable",
-        version="1.0",
+        version="1.0.0",
+        name="Unreachable Test Graph",
         nodes=[
             NodeDefinition(id="start", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="reachable", type=NodeType.TRANSFORM, config={}),

@@ -130,8 +130,8 @@ def test_arena_manager_reset():
     arena2 = manager.create_arena("arena2")
 
     # Add objects
-    arena1.allocate(Message(role="user", content="test1"))
-    arena2.allocate(Message(role="user", content="test2"))
+    arena1.allocate(_create_message("test1"))
+    arena2.allocate(_create_message("test2"))
 
     # Reset specific arena
     count = manager.reset_arena("arena1")
@@ -140,7 +140,7 @@ def test_arena_manager_reset():
     assert len(arena2) == 1
 
     # Reset all
-    arena1.allocate(Message(role="user", content="test3"))
+    arena1.allocate(_create_message("test3"))
     total = manager.reset_all()
     assert total == 2
     assert len(arena1) == 0
@@ -169,8 +169,8 @@ def test_arena_manager_stats():
     arena1 = manager.create_arena("arena1")
     arena2 = manager.create_arena("arena2")
 
-    arena1.allocate(Message(role="user", content="test1"))
-    arena2.allocate(Message(role="user", content="test2"))
+    arena1.allocate(_create_message("test1"))
+    arena2.allocate(_create_message("test2"))
 
     stats = manager.get_all_stats()
     assert "arena1" in stats
@@ -204,7 +204,7 @@ def test_arena_utilization():
 
     # Add messages
     for i in range(5):
-        arena.allocate(Message(role="user", content="x" * 100))
+        arena.allocate(_create_message("x" * 100))
 
     stats = arena.get_stats()
     assert 0.0 < stats.utilization <= 1.0
@@ -215,8 +215,8 @@ def test_arena_contains():
     """Test arena __contains__ method."""
     arena = Arena[Message](arena_id="test")
 
-    msg1 = arena.allocate(Message(role="user", content="test1"))
-    msg2 = Message(role="user", content="test2")  # Not allocated
+    msg1 = arena.allocate(_create_message("test1"))
+    msg2 = _create_message("test2")  # Not allocated
 
     assert msg1 in arena
     assert msg2 not in arena
@@ -228,7 +228,7 @@ def test_arena_large_objects():
 
     # Create large message
     large_content = "x" * 10000
-    msg = arena.allocate(Message(role="user", content=large_content))
+    msg = arena.allocate(_create_message(large_content))
 
     assert msg in arena
     stats = arena.get_stats()

@@ -35,22 +35,30 @@ class MessagePayloadFactory(Factory):
     @classmethod
     def with_code_task(cls, **kwargs):
         """Generate payload with code-related task."""
+        code_tasks = [
+            "Write a Python function to implement binary search",
+            "Create a class for database connection pooling",
+            "Implement a REST API endpoint for user authentication",
+            "Write an algorithm to find the shortest path",
+            "Design a method for caching query results",
+        ]
         return cls(
-            task=Faker("sentence", variable_nb_words=True, ext_word_list=[
-                "Write", "a", "Python", "function", "to", "implement",
-                "algorithm", "class", "method", "database", "query"
-            ]).generate(),
+            task=random.choice(code_tasks),
             **kwargs
         )
 
     @classmethod
     def with_math_task(cls, **kwargs):
         """Generate payload with math-related task."""
+        math_tasks = [
+            "Calculate the derivative of x^2 + 3x + 2",
+            "Find the sum of the first 100 prime numbers",
+            "Solve the quadratic equation ax^2 + bx + c = 0",
+            "Prove the Pythagorean theorem",
+            "Calculate the integral of sin(x) from 0 to pi",
+        ]
         return cls(
-            task=Faker("sentence", variable_nb_words=True, ext_word_list=[
-                "Calculate", "the", "sum", "product", "derivative", "integral",
-                "equation", "solve", "find", "prove", "theorem"
-            ]).generate(),
+            task=random.choice(math_tasks),
             **kwargs
         )
 
@@ -266,18 +274,9 @@ class GraphDefinitionFactory(Factory):
         router = NodeDefinitionFactory.router_node()
 
         # Create specialist nodes
-        code_node = NodeDefinitionFactory.model_node(
-            id="code.specialist",
-            model="granite-code:3b"
-        )
-        math_node = NodeDefinitionFactory.model_node(
-            id="math.specialist",
-            model="phi3:mini"
-        )
-        general_node = NodeDefinitionFactory.model_node(
-            id="general.specialist",
-            model="qwen2.5:3b"
-        )
+        code_node = NodeDefinitionFactory.model_node(model="granite-code:3b")
+        math_node = NodeDefinitionFactory.model_node(model="phi3:mini")
+        general_node = NodeDefinitionFactory.model_node(model="qwen2.5:3b")
 
         exit_node = NodeDefinitionFactory.exit_node()
 
@@ -313,14 +312,8 @@ class GraphDefinitionFactory(Factory):
         router = NodeDefinitionFactory.router_node()
 
         # Specialists
-        code_node = NodeDefinitionFactory.model_node(
-            id="code.specialist",
-            model="granite-code:3b"
-        )
-        math_node = NodeDefinitionFactory.model_node(
-            id="math.specialist",
-            model="phi3:mini"
-        )
+        code_node = NodeDefinitionFactory.model_node(model="granite-code:3b")
+        math_node = NodeDefinitionFactory.model_node(model="phi3:mini")
 
         # Tool nodes
         calc_tool = NodeDefinitionFactory.tool_node("calculator")

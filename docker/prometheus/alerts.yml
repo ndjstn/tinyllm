@@ -242,3 +242,147 @@ groups:
             Error rate is {{ $value | humanizePercentage }} over the last 6 hours.
             This is 2x our error budget target.
             Monitor closely and investigate if trend continues.
+
+      # 30-day error budget depletion warning
+      - alert: ErrorBudgetDepleting
+        expr: |
+          (
+            1 - (
+              sum(rate(tinyllm_requests_total{status!~"5.."}[30d]))
+              /
+              sum(rate(tinyllm_requests_total[30d]))
+            )
+          ) / 0.001 < 0.25
+        for: 1h
+        labels:
+          severity: warning
+          component: slo
+          type: error_budget
+        annotations:
+          summary: "Error budget running low (< 25% remaining)"
+          description: |
+            Only {{ $value | humanizePercentage }} of monthly error budget remains.
+            Error budget: {{ $value }}% of 0.1% (99.9% SLO).
+            Avoid risky deployments and monitor error rates closely.
+
+      # Multi-window burn rate alert (Google SRE method)
+      - alert: CriticalBurnRate
+        expr: |
+          (
+            rate(tinyllm_errors_total[1h]) / rate(tinyllm_requests_total[1h]) > 0.014
+          and
+            rate(tinyllm_errors_total[5m]) / rate(tinyllm_requests_total[5m]) > 0.014
+          )
+        for: 2m
+        labels:
+          severity: critical
+          component: slo
+          type: burn_rate
+        annotations:
+          summary: "Critical burn rate: exhausting error budget in < 2 days"
+          description: |
+            Both 1h and 5m error rates exceed 14x SLO budget (1.4%).
+            At this rate, monthly error budget will be exhausted in < 2 days.
+            IMMEDIATE action required to restore service quality.
+
+      - alert: FastBurnRate
+        expr: |
+          (
+            rate(tinyllm_errors_total[6h]) / rate(tinyllm_requests_total[6h]) > 0.006
+          and
+            rate(tinyllm_errors_total[30m]) / rate(tinyllm_requests_total[30m]) > 0.006
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          type: burn_rate
+        annotations:
+          summary: "Fast burn rate: exhausting error budget in < 6 days"
+          description: |
+            Both 6h and 30m error rates exceed 6x SLO budget (0.6%).
+            At this rate, monthly error budget will be exhausted in < 6 days.
+            Investigate and address error sources.
+
+  - name: tinyllm_latency_slo
+    interval: 30s
+    rules:
+      # Latency SLO tracking with burn rate
+      - alert: LatencySLOBreach
+        expr: |
+          (
+            sum(rate(tinyllm_request_duration_seconds_count{
+              le="0.5"
+            }[5m]))
+            /
+            sum(rate(tinyllm_request_duration_seconds_count[5m]))
+          ) < 0.95
+        for: 10m
+        labels:
+          severity: warning
+          component: slo
+          type: latency
+        annotations:
+          summary: "Latency SLO breach: <95% requests under 500ms"
+          description: |
+            Only {{ $value | humanizePercentage }} of requests complete within 500ms.
+            SLO target is 95% of requests under 500ms.
+            Current P95: {{ $value }}ms
+
+      # Model-specific latency tracking
+      - alert: ModelLatencyDegradation
+        expr: |
+          (
+            histogram_quantile(0.95, rate(tinyllm_model_latency_ms_bucket[5m]))
+            /
+            histogram_quantile(0.95, rate(tinyllm_model_latency_ms_bucket[1h])) offset 1h
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: latency
+        annotations:
+          summary: "Model {{ $labels.model }} latency degraded by 50%"
+          description: |
+            P95 latency for model {{ $labels.model }} is {{ $value }}x higher than 1 hour ago.
+            Current P95: {{ $value }}ms
+            This indicates performance degradation requiring investigation.
+
+  - name: tinyllm_correlation_alerts
+    interval: 30s
+    rules:
+      # Correlation ID tracking and orphaned traces
+      - alert: OrphanedCorrelationIDs
+        expr: |
+          rate(tinyllm_correlation_ids_total[5m])
+          -
+          rate(tinyllm_correlation_ids_completed_total[5m])
+          > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: tracing
+        annotations:
+          summary: "High rate of orphaned correlation IDs"
+          description: |
+            {{ $value }} correlation IDs/sec are created but not completed.
+            This may indicate request timeouts or dropped connections.
+            Check for stuck requests or trace propagation issues.
+
+      # Trace sampling effectiveness
+      - alert: LowTraceSamplingRate
+        expr: |
+          rate(tinyllm_traces_sampled_total[10m])
+          /
+          rate(tinyllm_traces_total[10m])
+          < 0.01
+        for: 15m
+        labels:
+          severity: info
+          component: tracing
+        annotations:
+          summary: "Trace sampling rate very low (< 1%)"
+          description: |
+            Only {{ $value | humanizePercentage }} of traces are being sampled.
+            This may be intentional, but verify sampling configuration.
+            Low sampling may miss important error scenarios.
