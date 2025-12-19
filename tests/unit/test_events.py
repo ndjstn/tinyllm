@@ -291,3 +291,212 @@ class TestConvenienceFunctions:
 
         # Clean up
         emitter.remove_handler(buffer)
+
+
+class TestStructuredEventLogging:
+    """Test structured event logging features (Task 48)."""
+
+    def test_event_trace_correlation_injection(self, monkeypatch):
+        """Test that events automatically inherit trace context."""
+        import sys
+        from unittest.mock import MagicMock
+
+        # Setup mock telemetry
+        mock_telemetry = MagicMock()
+        mock_telemetry.get_current_trace_id = lambda: "trace-abc-123"
+        mock_telemetry.get_current_span_id = lambda: "span-xyz-456"
+        sys.modules['tinyllm.telemetry'] = mock_telemetry
+
+        try:
+            emitter = EventEmitter()
+            buffer = BufferedEventHandler()
+            emitter.add_handler(buffer)
+
+            event = Event(
+                event_type="test.correlated",
+                category=EventCategory.EXECUTION,
+                severity=EventSeverity.INFO,
+                message="Test event with correlation",
+            )
+
+            emitter.emit(event)
+
+            # Event should have trace context injected
+            buffered_event = buffer.events[-1]
+            assert buffered_event.trace_id == "trace-abc-123"
+            assert buffered_event.span_id == "span-xyz-456"
+        finally:
+            if 'tinyllm.telemetry' in sys.modules:
+                del sys.modules['tinyllm.telemetry']
+
+    def test_event_serialization_with_all_fields(self):
+        """Test event serialization includes all optional fields."""
+        event = Event(
+            event_type="test.full",
+            category=EventCategory.SECURITY,
+            severity=EventSeverity.CRITICAL,
+            message="Full event",
+            data={"key": "value"},
+            tags=["important", "security"],
+            trace_id="trace-123",
+            span_id="span-456",
+            user_id="user-789",
+            session_id="session-abc",
+            error_type="SecurityError",
+            error_message="Unauthorized access",
+            stack_trace="stack trace here",
+        )
+
+        event_dict = event.to_dict()
+
+        assert event_dict["trace_id"] == "trace-123"
+        assert event_dict["span_id"] == "span-456"
+        assert event_dict["user_id"] == "user-789"
+        assert event_dict["session_id"] == "session-abc"
+        assert "error" in event_dict
+        assert event_dict["error"]["type"] == "SecurityError"
+        assert event_dict["error"]["message"] == "Unauthorized access"
+
+    def test_event_categories_comprehensive(self):
+        """Test all event categories are available."""
+        categories = [
+            EventCategory.SYSTEM,
+            EventCategory.EXECUTION,
+            EventCategory.MODEL,
+            EventCategory.CACHE,
+            EventCategory.SECURITY,
+            EventCategory.PERFORMANCE,
+            EventCategory.USER,
+            EventCategory.INTEGRATION,
+            EventCategory.DATA,
+        ]
+
+        for category in categories:
+            event = Event(
+                event_type=f"test.{category.value}",
+                category=category,
+                severity=EventSeverity.INFO,
+                message=f"Test {category.value}",
+            )
+            assert event.category == category
+
+    def test_event_severities_comprehensive(self):
+        """Test all event severities are available."""
+        severities = [
+            EventSeverity.DEBUG,
+            EventSeverity.INFO,
+            EventSeverity.WARNING,
+            EventSeverity.ERROR,
+            EventSeverity.CRITICAL,
+        ]
+
+        for severity in severities:
+            event = Event(
+                event_type=f"test.{severity.value}",
+                category=EventCategory.SYSTEM,
+                severity=severity,
+                message=f"Test {severity.value}",
+            )
+            assert event.severity == severity
+
+    def test_buffered_handler_limit_parameter(self):
+        """Test buffered handler respects limit parameter."""
+        buffer = BufferedEventHandler()
+
+        for i in range(20):
+            event = Event(
+                event_type=f"test.{i}",
+                category=EventCategory.SYSTEM,
+                severity=EventSeverity.INFO,
+                message=f"Event {i}",
+            )
+            buffer.handle(event)
+
+        # Get limited events
+        limited = buffer.get_events(limit=5)
+        assert len(limited) == 5
+        # Should get the last 5
+        assert limited[0].event_type == "test.15"
+        assert limited[-1].event_type == "test.19"
+
+    def test_metric_event_handler_integration(self):
+        """Test that MetricEventHandler records events as metrics."""
+        from tinyllm.events import MetricEventHandler
+
+        handler = MetricEventHandler()
+        event = Event(
+            event_type="test.metrics",
+            category=EventCategory.PERFORMANCE,
+            severity=EventSeverity.WARNING,
+            message="Performance issue detected",
+        )
+
+        # Should not raise
+        handler.handle(event)
+
+    def test_event_emitter_handler_error_resilience(self):
+        """Test that emitter continues if one handler fails."""
+        from tinyllm.events import EventHandler
+
+        class FailingHandler(EventHandler):
+            def handle(self, event):
+                raise RuntimeError("Handler failed")
+
+        emitter = EventEmitter()
+        buffer = BufferedEventHandler()
+        failing = FailingHandler()
+
+        emitter.add_handler(failing)
+        emitter.add_handler(buffer)
+
+        event = Event(
+            event_type="test.resilience",
+            category=EventCategory.SYSTEM,
+            severity=EventSeverity.INFO,
+            message="Test",
+        )
+
+        # Should not raise even though one handler fails
+        emitter.emit(event)
+
+        # Buffer should still receive the event
+        assert len(buffer.events) == 1
+
+    def test_event_immutability_after_creation(self):
+        """Test that event fields can be set after creation."""
+        event = Event(
+            event_type="test.mutable",
+            category=EventCategory.SYSTEM,
+            severity=EventSeverity.INFO,
+            message="Test",
+        )
+
+        # Can set trace_id after creation
+        event.trace_id = "new-trace-id"
+        assert event.trace_id == "new-trace-id"
+
+    def test_structured_event_with_nested_data(self):
+        """Test events can handle complex nested data structures."""
+        complex_data = {
+            "user": {
+                "id": "user-123",
+                "roles": ["admin", "developer"],
+                "metadata": {"team": "engineering", "level": 5},
+            },
+            "action": "deploy",
+            "targets": ["prod-1", "prod-2"],
+        }
+
+        event = Event(
+            event_type="deployment.started",
+            category=EventCategory.SYSTEM,
+            severity=EventSeverity.INFO,
+            message="Deployment initiated",
+            data=complex_data,
+        )
+
+        assert event.data["user"]["roles"] == ["admin", "developer"]
+        assert event.data["targets"] == ["prod-1", "prod-2"]
+
+        event_dict = event.to_dict()
+        assert event_dict["data"]["user"]["metadata"]["team"] == "engineering"

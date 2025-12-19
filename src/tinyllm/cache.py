@@ -844,3 +844,650 @@ async def create_cached_client(
     )
 
     return CachedOllamaClient(client=client, cache=cache, enable_cache=enable_cache)
+# Cache Extensions for Tasks 101-110
+# This will be appended to cache.py
+
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Optional, Dict, List
+import asyncio
+import time
+import json
+
+# Task 101: Cache Prefetching
+
+
+class CachePrefetcher:
+    """Prefetch cache entries based on access patterns.
+
+    Analyzes access patterns to predict and pre-load likely cache entries.
+    """
+
+    def __init__(
+        self,
+        cache,
+        pattern_window: int = 100,
+        prefetch_threshold: float = 0.5,
+    ):
+        """Initialize cache prefetcher.
+
+        Args:
+            cache: ResponseCache instance to prefetch for.
+            pattern_window: Number of recent accesses to analyze.
+            prefetch_threshold: Probability threshold for prefetching (0-1).
+        """
+        self.cache = cache
+        self.pattern_window = pattern_window
+        self.prefetch_threshold = prefetch_threshold
+        self._access_history: deque = deque(maxlen=pattern_window)
+        self._pattern_counts: Dict[tuple, int] = defaultdict(int)
+        self._prefetch_queue: asyncio.Queue = asyncio.Queue()
+        self._prefetch_task: Optional[asyncio.Task] = None
+
+    def record_access(self, key: str) -> None:
+        """Record a cache access for pattern analysis."""
+        self._access_history.append(key)
+        if len(self._access_history) >= 2:
+            pattern = tuple(list(self._access_history)[-2:])
+            self._pattern_counts[pattern] += 1
+
+    def predict_next_keys(self, current_key: str, top_n: int = 5) -> List[str]:
+        """Predict next likely cache keys based on patterns."""
+        candidates = []
+        for pattern, count in self._pattern_counts.items():
+            if pattern[0] == current_key:
+                candidates.append((pattern[1], count))
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return [key for key, _ in candidates[:top_n]]
+
+    async def prefetch(
+        self,
+        keys: List[str],
+        generator_fn: Callable[[str], Any],
+    ) -> None:
+        """Prefetch cache entries for given keys."""
+        for key in keys:
+            existing = await self.cache.get(key)
+            if existing is None:
+                try:
+                    response = await generator_fn(key)
+                    await self.cache.set(key, response)
+                except Exception:
+                    pass
+
+
+# Task 102: Cache Partitioning
+
+
+class PartitionedCache:
+    """Cache with partitioning support for better isolation."""
+
+    def __init__(
+        self,
+        num_partitions: int = 4,
+        partition_fn: Optional[Callable[[str], int]] = None,
+    ):
+        """Initialize partitioned cache."""
+        from tinyllm.cache import InMemoryBackend
+        self.num_partitions = num_partitions
+        self.partition_fn = partition_fn or self._default_partition
+        self._partitions: List = [
+            InMemoryBackend() for _ in range(num_partitions)
+        ]
+
+    def _default_partition(self, key: str) -> int:
+        """Default partition function using hash."""
+        return hash(key) % self.num_partitions
+
+    def _get_partition(self, key: str):
+        """Get partition for a key."""
+        partition_id = self.partition_fn(key)
+        return self._partitions[partition_id]
+
+    async def get(self, key: str):
+        """Get entry from appropriate partition."""
+        partition = self._get_partition(key)
+        return await partition.get(key)
+
+    async def set(self, key: str, entry):
+        """Set entry in appropriate partition."""
+        partition = self._get_partition(key)
+        await partition.set(key, entry)
+
+    async def delete(self, key: str):
+        """Delete entry from appropriate partition."""
+        partition = self._get_partition(key)
+        await partition.delete(key)
+
+    async def clear(self):
+        """Clear all partitions."""
+        for partition in self._partitions:
+            await partition.clear()
+
+    async def size(self) -> int:
+        """Get total size across all partitions."""
+        total = 0
+        for partition in self._partitions:
+            total += await partition.size()
+        return total
+
+    async def close(self):
+        """Close all partitions."""
+        for partition in self._partitions:
+            await partition.close()
+
+
+# Task 103: Cache Replication
+
+
+class ReplicatedCache:
+    """Cache with replication across multiple backends."""
+
+    def __init__(
+        self,
+        primary,
+        replicas: List,
+        read_from_replicas: bool = True,
+    ):
+        """Initialize replicated cache."""
+        self.primary = primary
+        self.replicas = replicas
+        self.read_from_replicas = read_from_replicas
+
+    async def get(self, key: str):
+        """Get entry from primary, fallback to replicas."""
+        entry = await self.primary.get(key)
+        if entry is not None:
+            return entry
+
+        if self.read_from_replicas:
+            for replica in self.replicas:
+                entry = await replica.get(key)
+                if entry is not None:
+                    asyncio.create_task(self.primary.set(key, entry))
+                    return entry
+        return None
+
+    async def set(self, key: str, entry):
+        """Set entry in primary and all replicas."""
+        await self.primary.set(key, entry)
+        for replica in self.replicas:
+            asyncio.create_task(replica.set(key, entry))
+
+    async def delete(self, key: str):
+        """Delete from primary and all replicas."""
+        await self.primary.delete(key)
+        for replica in self.replicas:
+            asyncio.create_task(replica.delete(key))
+
+    async def clear(self):
+        """Clear primary and all replicas."""
+        await self.primary.clear()
+        for replica in self.replicas:
+            await replica.clear()
+
+    async def size(self) -> int:
+        """Get size from primary."""
+        return await self.primary.size()
+
+    async def close(self):
+        """Close primary and all replicas."""
+        await self.primary.close()
+        for replica in self.replicas:
+            await replica.close()
+
+
+# Task 104: Write-Through/Write-Back Policies
+
+
+class WritePolicy(Enum):
+    """Cache write policies."""
+    WRITE_THROUGH = "write_through"
+    WRITE_BACK = "write_back"
+    WRITE_AROUND = "write_around"
+
+
+class WritePolicyCache:
+    """Cache with configurable write policies."""
+
+    def __init__(
+        self,
+        cache_backend,
+        storage_backend=None,
+        policy: WritePolicy = WritePolicy.WRITE_THROUGH,
+        write_back_interval: int = 60,
+    ):
+        """Initialize write policy cache."""
+        self.cache_backend = cache_backend
+        self.storage_backend = storage_backend
+        self.policy = policy
+        self.write_back_interval = write_back_interval
+        self._dirty_keys: set = set()
+        self._flush_task: Optional[asyncio.Task] = None
+
+    async def get(self, key: str):
+        """Get entry from cache, fallback to storage."""
+        entry = await self.cache_backend.get(key)
+        if entry is not None:
+            return entry
+        if self.storage_backend:
+            entry = await self.storage_backend.get(key)
+            if entry is not None:
+                await self.cache_backend.set(key, entry)
+                return entry
+        return None
+
+    async def set(self, key: str, entry):
+        """Set entry according to write policy."""
+        if self.policy == WritePolicy.WRITE_THROUGH:
+            await self.cache_backend.set(key, entry)
+            if self.storage_backend:
+                await self.storage_backend.set(key, entry)
+        elif self.policy == WritePolicy.WRITE_BACK:
+            await self.cache_backend.set(key, entry)
+            self._dirty_keys.add(key)
+        elif self.policy == WritePolicy.WRITE_AROUND:
+            if self.storage_backend:
+                await self.storage_backend.set(key, entry)
+            else:
+                await self.cache_backend.set(key, entry)
+
+    async def flush(self):
+        """Flush dirty entries to storage (write-back mode)."""
+        if not self.storage_backend or not self._dirty_keys:
+            return
+        dirty_copy = self._dirty_keys.copy()
+        self._dirty_keys.clear()
+        for key in dirty_copy:
+            try:
+                entry = await self.cache_backend.get(key)
+                if entry is not None:
+                    await self.storage_backend.set(key, entry)
+            except Exception:
+                self._dirty_keys.add(key)
+
+    async def delete(self, key: str):
+        """Delete from both cache and storage."""
+        await self.cache_backend.delete(key)
+        if self.storage_backend:
+            await self.storage_backend.delete(key)
+        self._dirty_keys.discard(key)
+
+    async def clear(self):
+        """Clear both cache and storage."""
+        await self.cache_backend.clear()
+        if self.storage_backend:
+            await self.storage_backend.clear()
+        self._dirty_keys.clear()
+
+    async def size(self) -> int:
+        """Get cache size."""
+        return await self.cache_backend.size()
+
+    async def close(self):
+        """Flush and close backends."""
+        if self._flush_task:
+            self._flush_task.cancel()
+        await self.flush()
+        await self.cache_backend.close()
+        if self.storage_backend:
+            await self.storage_backend.close()
+
+
+# Task 105: Cache TTL Optimization
+
+
+class TTLOptimizer:
+    """Optimize cache TTL based on access patterns."""
+
+    def __init__(
+        self,
+        min_ttl: int = 300,
+        max_ttl: int = 7200,
+        target_hit_rate: float = 0.8,
+    ):
+        """Initialize TTL optimizer."""
+        self.min_ttl = min_ttl
+        self.max_ttl = max_ttl
+        self.target_hit_rate = target_hit_rate
+        self._key_stats: Dict[str, Dict] = defaultdict(
+            lambda: {"accesses": 0, "last_access": 0, "ttl": max_ttl}
+        )
+
+    def record_access(self, key: str, hit: bool):
+        """Record cache access for TTL optimization."""
+        stats = self._key_stats[key]
+        stats["accesses"] += 1
+        stats["last_access"] = time.monotonic()
+
+    def get_optimal_ttl(self, key: str, current_hit_rate: float) -> int:
+        """Calculate optimal TTL for a key."""
+        stats = self._key_stats[key]
+        if current_hit_rate < self.target_hit_rate:
+            new_ttl = min(int(stats["ttl"] * 1.5), self.max_ttl)
+        else:
+            new_ttl = max(int(stats["ttl"] * 0.8), self.min_ttl)
+        stats["ttl"] = new_ttl
+        return new_ttl
+
+
+# Task 106: Cache Size Auto-Tuning
+
+
+class CacheSizeTuner:
+    """Automatically tune cache size based on performance."""
+
+    def __init__(
+        self,
+        initial_size: int = 1000,
+        min_size: int = 100,
+        max_size: int = 10000,
+        target_hit_rate: float = 0.8,
+        adjustment_interval: int = 300,
+    ):
+        """Initialize cache size tuner."""
+        self.current_size = initial_size
+        self.min_size = min_size
+        self.max_size = max_size
+        self.target_hit_rate = target_hit_rate
+        self.adjustment_interval = adjustment_interval
+        self._last_adjustment = time.monotonic()
+
+    def should_adjust(self) -> bool:
+        """Check if cache size should be adjusted."""
+        return (time.monotonic() - self._last_adjustment) >= self.adjustment_interval
+
+    def calculate_new_size(self, current_hit_rate: float, eviction_rate: float) -> int:
+        """Calculate new optimal cache size."""
+        if not self.should_adjust():
+            return self.current_size
+        self._last_adjustment = time.monotonic()
+        if current_hit_rate < self.target_hit_rate or eviction_rate > 0.1:
+            new_size = min(int(self.current_size * 1.5), self.max_size)
+        elif current_hit_rate > self.target_hit_rate * 1.1 and eviction_rate < 0.01:
+            new_size = max(int(self.current_size * 0.8), self.min_size)
+        else:
+            new_size = self.current_size
+        self.current_size = new_size
+        return new_size
+
+
+# Task 107: Cache Persistence
+
+
+class PersistentCache:
+    """Cache with disk persistence support."""
+
+    def __init__(
+        self,
+        backend,
+        persist_path: str = "/tmp/tinyllm_cache.json",
+        auto_save_interval: int = 300,
+    ):
+        """Initialize persistent cache."""
+        self.backend = backend
+        self.persist_path = persist_path
+        self.auto_save_interval = auto_save_interval
+        self._save_task: Optional[asyncio.Task] = None
+
+    async def save(self):
+        """Save cache to disk."""
+        from tinyllm.cache import InMemoryBackend, CacheEntry, GenerateResponse
+        if not isinstance(self.backend, InMemoryBackend):
+            return
+        try:
+            cache_data = []
+            async with self.backend._lock:
+                for key, entry in self.backend._cache.items():
+                    cache_data.append({
+                        "key": key,
+                        "response": entry.response.model_dump(),
+                        "created_at": entry.created_at,
+                        "ttl": entry.ttl,
+                        "access_count": entry.access_count,
+                        "last_accessed": entry.last_accessed,
+                    })
+            with open(self.persist_path, "w") as f:
+                json.dump(cache_data, f)
+        except Exception:
+            pass
+
+    async def load(self):
+        """Load cache from disk."""
+        from tinyllm.cache import InMemoryBackend, CacheEntry, GenerateResponse
+        if not isinstance(self.backend, InMemoryBackend):
+            return
+        try:
+            import os
+            if not os.path.exists(self.persist_path):
+                return
+            with open(self.persist_path, "r") as f:
+                cache_data = json.load(f)
+            loaded = 0
+            for item in cache_data:
+                try:
+                    response = GenerateResponse(**item["response"])
+                    entry = CacheEntry(
+                        response=response,
+                        created_at=item["created_at"],
+                        ttl=item.get("ttl"),
+                        access_count=item.get("access_count", 0),
+                        last_accessed=item.get("last_accessed", time.monotonic()),
+                    )
+                    if not entry.is_expired():
+                        await self.backend.set(item["key"], entry)
+                        loaded += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+# Task 108: Cache Analytics
+
+
+@dataclass
+class CacheAnalytics:
+    """Comprehensive cache analytics."""
+    total_requests: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    avg_latency_ms: float = 0
+    p50_latency_ms: float = 0
+    p95_latency_ms: float = 0
+    p99_latency_ms: float = 0
+    eviction_count: int = 0
+    error_count: int = 0
+    hot_keys: List[tuple] = field(default_factory=list)
+    cold_keys: List[tuple] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert analytics to dictionary."""
+        return {
+            "total_requests": self.total_requests,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "hit_rate": self.cache_hits / self.total_requests if self.total_requests > 0 else 0,
+            "avg_latency_ms": self.avg_latency_ms,
+            "p50_latency_ms": self.p50_latency_ms,
+            "p95_latency_ms": self.p95_latency_ms,
+            "p99_latency_ms": self.p99_latency_ms,
+            "eviction_count": self.eviction_count,
+            "error_count": self.error_count,
+            "hot_keys": self.hot_keys[:10],
+            "cold_keys": self.cold_keys[:10],
+        }
+
+
+class CacheAnalyzer:
+    """Analyze cache performance and access patterns."""
+
+    def __init__(self, cache):
+        """Initialize cache analyzer."""
+        self.cache = cache
+        self._latencies: deque = deque(maxlen=1000)
+        self._key_access_counts: Dict[str, int] = defaultdict(int)
+
+    def record_latency(self, latency_ms: float):
+        """Record cache operation latency."""
+        self._latencies.append(latency_ms)
+
+    def record_key_access(self, key: str):
+        """Record key access for hot/cold analysis."""
+        self._key_access_counts[key] += 1
+
+    def get_analytics(self) -> CacheAnalytics:
+        """Get comprehensive cache analytics."""
+        metrics = self.cache.get_metrics()
+        analytics = CacheAnalytics(
+            total_requests=metrics.total_requests,
+            cache_hits=metrics.hits,
+            cache_misses=metrics.misses,
+            eviction_count=metrics.evictions,
+            error_count=metrics.errors,
+        )
+        if self._latencies:
+            sorted_latencies = sorted(self._latencies)
+            analytics.avg_latency_ms = sum(sorted_latencies) / len(sorted_latencies)
+            analytics.p50_latency_ms = sorted_latencies[len(sorted_latencies) // 2]
+            analytics.p95_latency_ms = sorted_latencies[int(len(sorted_latencies) * 0.95)]
+            analytics.p99_latency_ms = sorted_latencies[int(len(sorted_latencies) * 0.99)]
+        sorted_keys = sorted(
+            self._key_access_counts.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        analytics.hot_keys = sorted_keys[:10]
+        analytics.cold_keys = sorted_keys[-10:] if len(sorted_keys) > 10 else []
+        return analytics
+
+
+# Task 109: Cache Bypass Rules
+
+
+class BypassRule:
+    """Rule for bypassing cache."""
+
+    def should_bypass(self, key: str, **kwargs) -> bool:
+        """Check if cache should be bypassed."""
+        return False
+
+
+class PatternBypassRule(BypassRule):
+    """Bypass cache based on key patterns."""
+
+    def __init__(self, patterns: List[str]):
+        """Initialize pattern bypass rule."""
+        self.patterns = patterns
+
+    def should_bypass(self, key: str, **kwargs) -> bool:
+        """Check if key matches bypass patterns."""
+        import fnmatch
+        return any(fnmatch.fnmatch(key, pattern) for pattern in self.patterns)
+
+
+class SizeBypassRule(BypassRule):
+    """Bypass cache for large responses."""
+
+    def __init__(self, max_size_bytes: int):
+        """Initialize size bypass rule."""
+        self.max_size_bytes = max_size_bytes
+
+    def should_bypass(self, key: str, **kwargs) -> bool:
+        """Check if response size exceeds threshold."""
+        response = kwargs.get("response")
+        if response and hasattr(response, "response"):
+            size = len(response.response.encode("utf-8"))
+            return size > self.max_size_bytes
+        return False
+
+
+class RuleBasedCache:
+    """Cache with bypass rules."""
+
+    def __init__(self, cache):
+        """Initialize rule-based cache."""
+        self.cache = cache
+        self.bypass_rules: List[BypassRule] = []
+
+    def add_bypass_rule(self, rule: BypassRule):
+        """Add a bypass rule."""
+        self.bypass_rules.append(rule)
+
+    async def get(self, key: str, **kwargs):
+        """Get from cache, respecting bypass rules."""
+        if any(rule.should_bypass(key, **kwargs) for rule in self.bypass_rules):
+            return None
+        return await self.cache.get(key)
+
+    async def set(self, key: str, response, ttl=None, **kwargs):
+        """Set in cache, respecting bypass rules."""
+        if any(rule.should_bypass(key, response=response, **kwargs) for rule in self.bypass_rules):
+            return
+        await self.cache.set(key, response, ttl)
+
+
+# Task 110: Negative Caching
+
+
+@dataclass
+class NegativeCacheEntry:
+    """Entry for caching negative results (errors, empty responses)."""
+    key: str
+    error_type: str
+    timestamp: float
+    ttl: int = 300
+
+    def is_expired(self) -> bool:
+        """Check if negative entry has expired."""
+        return (time.monotonic() - self.timestamp) > self.ttl
+
+
+class NegativeCache:
+    """Cache for negative results to avoid repeated failures."""
+
+    def __init__(self, default_ttl: int = 300, max_size: int = 1000):
+        """Initialize negative cache."""
+        from collections import OrderedDict
+        self.default_ttl = default_ttl
+        self.max_size = max_size
+        self._entries: OrderedDict = OrderedDict()
+        self._lock = asyncio.Lock()
+
+    async def is_negative(self, key: str) -> Optional[str]:
+        """Check if key has a negative cache entry."""
+        async with self._lock:
+            if key in self._entries:
+                entry = self._entries[key]
+                if entry.is_expired():
+                    del self._entries[key]
+                    return None
+                self._entries.move_to_end(key)
+                return entry.error_type
+            return None
+
+    async def add_negative(self, key: str, error_type: str, ttl: Optional[int] = None):
+        """Add a negative cache entry."""
+        async with self._lock:
+            entry = NegativeCacheEntry(
+                key=key,
+                error_type=error_type,
+                timestamp=time.monotonic(),
+                ttl=ttl or self.default_ttl,
+            )
+            if key in self._entries:
+                del self._entries[key]
+            elif len(self._entries) >= self.max_size:
+                self._entries.popitem(last=False)
+            self._entries[key] = entry
+
+    async def clear(self):
+        """Clear all negative entries."""
+        async with self._lock:
+            self._entries.clear()
+
+    async def size(self) -> int:
+        """Get number of negative entries."""
+        async with self._lock:
+            return len(self._entries)

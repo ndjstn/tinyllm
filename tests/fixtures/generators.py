@@ -121,8 +121,10 @@ class NodeDefinitionFactory(Factory):
     @classmethod
     def model_node(cls, model: str = "qwen2.5:3b", **kwargs):
         """Generate model node definition."""
+        # Sanitize model name for valid ID (only lowercase, digits, underscore, dot)
+        sanitized = model.replace(":", "_").replace("-", "_")
         return cls(
-            id=kwargs.get("id", f"model.{model.replace(':', '_')}"),
+            id=kwargs.get("id", f"model.{sanitized}"),
             type=NodeType.MODEL,
             name=f"Model {model}",
             config={"model": model},

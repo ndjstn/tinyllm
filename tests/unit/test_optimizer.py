@@ -333,7 +333,8 @@ def test_optimization_result_structure():
 
     graph_def = GraphDefinition(
         id="test",
-        version="1.0",
+        version="1.0.0",
+        name="Test Graph",
         nodes=[NodeDefinition(id="n1", type=NodeType.TRANSFORM, config={})],
         edges=[],
         entry_points=["n1"],
@@ -354,7 +355,8 @@ def test_topological_order_with_cycles():
     """Test execution plan with cyclic graph."""
     graph_def = GraphDefinition(
         id="cyclic",
-        version="1.0",
+        version="1.0.0",
+        name="Cyclic Test Graph",
         nodes=[
             NodeDefinition(id="a", type=NodeType.TRANSFORM, config={}),
             NodeDefinition(id="b", type=NodeType.TRANSFORM, config={}),
@@ -382,29 +384,34 @@ def test_topological_order_with_cycles():
 
 
 def test_empty_graph():
-    """Test optimizing an empty graph."""
+    """Test optimizing a minimal graph."""
+    # Graph must have at least one node and entry point per validation
     graph_def = GraphDefinition(
-        id="empty",
-        version="1.0",
-        nodes=[],
+        id="minimal",
+        version="1.0.0",
+        name="Minimal Test Graph",
+        nodes=[NodeDefinition(id="only", type=NodeType.TRANSFORM, config={})],
         edges=[],
-        entry_points=[],
-        exit_points=[],
+        entry_points=["only"],
+        exit_points=["only"],
     )
 
     graph = Graph(graph_def)
+    graph.add_node(TransformNode(graph_def.nodes[0]))
+
     optimizer = GraphOptimizer()
 
     result = optimizer.optimize(graph)
-    assert result.original_nodes == 0
-    assert result.optimized_nodes == 0
+    assert result.original_nodes == 1
+    assert result.optimized_nodes == 1
 
 
 def test_single_node_graph():
     """Test optimizing a graph with a single node."""
     graph_def = GraphDefinition(
         id="single",
-        version="1.0",
+        version="1.0.0",
+        name="Single Node Test Graph",
         nodes=[NodeDefinition(id="only", type=NodeType.TRANSFORM, config={})],
         edges=[],
         entry_points=["only"],

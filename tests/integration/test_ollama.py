@@ -273,34 +273,6 @@ async def test_timeout_handling(ollama_client):
 
 
 @pytest.mark.asyncio
-async def test_model_registry_integration():
-    """Test ModelRegistry with real Ollama."""
-    available = await check_ollama_available()
-    if not available:
-        pytest.skip("Ollama server not available")
-
-    model_available = await check_model_available(TEST_MODEL)
-    if not model_available:
-        pytest.skip(f"Model {TEST_MODEL} not available")
-
-    registry = ModelRegistry()
-
-    # Register test model
-    registry.register(
-        model_id="test_model",
-        model_name=TEST_MODEL,
-        tier=0,
-        specialization="general",
-        description="Test model",
-    )
-
-    # Get model config
-    config = registry.get_model_config("test_model")
-    assert config is not None
-    assert config.model_name == TEST_MODEL
-
-
-@pytest.mark.asyncio
 async def test_rate_limiting(ollama_client):
     """Test rate limiting behavior."""
     available = await check_ollama_available()

@@ -21,8 +21,7 @@ from tinyllm.metrics import MetricsCollector
 def execution_context_strategy(draw):
     """Generate random ExecutionContext objects."""
     import uuid
-    from datetime import datetime
-    from tinyllm.core.graph import GraphConfig
+    from tinyllm.config.loader import Config
 
     messages = draw(st.lists(
         st.dictionaries(
@@ -40,7 +39,7 @@ def execution_context_strategy(draw):
         trace_id=str(uuid.uuid4()),
         graph_id=draw(st.text(min_size=1, max_size=20)),
         messages=messages,
-        config=GraphConfig()
+        config=Config()
     )
 
 
