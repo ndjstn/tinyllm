@@ -60,6 +60,22 @@ Tests across increasing difficulty levels (easy → extreme):
 
 **No breaking points detected** - The system maintained 100% success rate and high quality scores even at extreme difficulty levels.
 
+## Tool-Assisted Comparison
+
+Do tools help or slow agents down?
+
+![Tool Comparison](results/tool_comparison_visual.png)
+
+### Key Findings
+
+| Metric | With Tools | Pure LLM | Winner |
+|--------|------------|----------|--------|
+| **Accuracy** | 8/8 (100%) | 6/8 (75%) | Tools |
+| **Avg Latency** | 6.0s | 5.5s | Pure LLM |
+| **Verdict** | - | - | **Tools** |
+
+**Conclusion**: Tools add ~500ms latency overhead but improve accuracy from 75% to 100%. For math calculations, the accuracy gain outweighs the speed cost. Calculators don't hallucinate.
+
 ## Query Categories
 
 - **Math**: Simple arithmetic, algebra, calculus, proofs

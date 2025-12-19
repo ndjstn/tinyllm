@@ -1,0 +1,115 @@
+{
+  "results": [
+    {
+      "query": "What is 847 * 923?",
+      "category": "arithmetic",
+      "tool_latency_ms": 9753,
+      "pure_latency_ms": 9501,
+      "latency_diff_ms": -252,
+      "tool_correct": true,
+      "pure_correct": false,
+      "tool_advantage": "similar"
+    },
+    {
+      "query": "Calculate 15% of 8,450",
+      "category": "percentage",
+      "tool_latency_ms": 3823,
+      "pure_latency_ms": 5881,
+      "latency_diff_ms": 2058,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "tools_faster"
+    },
+    {
+      "query": "What is the square root of 2401?",
+      "category": "arithmetic",
+      "tool_latency_ms": 4172,
+      "pure_latency_ms": 5449,
+      "latency_diff_ms": 1277,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "tools_faster"
+    },
+    {
+      "query": "Calculate (125 + 375) / 10 - 23",
+      "category": "arithmetic",
+      "tool_latency_ms": 5827,
+      "pure_latency_ms": 3048,
+      "latency_diff_ms": -2779,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "pure_faster"
+    },
+    {
+      "query": "What is 2^10?",
+      "category": "exponent",
+      "tool_latency_ms": 8193,
+      "pure_latency_ms": 5587,
+      "latency_diff_ms": -2606,
+      "tool_correct": true,
+      "pure_correct": false,
+      "tool_advantage": "pure_faster"
+    },
+    {
+      "query": "What causes thunder?",
+      "category": "general",
+      "tool_latency_ms": 6620,
+      "pure_latency_ms": 6262,
+      "latency_diff_ms": -358,
+      "tool_correct": null,
+      "pure_correct": null,
+      "tool_advantage": "similar"
+    },
+    {
+      "query": "Explain what recursion is in programming",
+      "category": "general",
+      "tool_latency_ms": 7924,
+      "pure_latency_ms": 7517,
+      "latency_diff_ms": -407,
+      "tool_correct": null,
+      "pure_correct": null,
+      "tool_advantage": "similar"
+    },
+    {
+      "query": "If I invest $5000 at 7% annual interest compounded monthly for 5 years, what is my final balance?",
+      "category": "compound_math",
+      "tool_latency_ms": 7475,
+      "pure_latency_ms": 6900,
+      "latency_diff_ms": -575,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "pure_faster"
+    },
+    {
+      "query": "A store has a 30% off sale. If something costs $89.99, what is the sale price?",
+      "category": "percentage",
+      "tool_latency_ms": 4960,
+      "pure_latency_ms": 3769,
+      "latency_diff_ms": -1191,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "pure_faster"
+    },
+    {
+      "query": "Calculate the area of a circle with radius 7.5",
+      "category": "geometry",
+      "tool_latency_ms": 4201,
+      "pure_latency_ms": 3861,
+      "latency_diff_ms": -340,
+      "tool_correct": true,
+      "pure_correct": true,
+      "tool_advantage": "similar"
+    }
+  ],
+  "summary": {
+    "math_queries": {
+      "total": 8,
+      "tools_faster": 2,
+      "avg_tool_latency_ms": 7272.0,
+      "avg_pure_latency_ms": 6889.5,
+      "tool_correct": 8,
+      "pure_correct": 6
+    }
+  },
+  "timestamp": "2025-12-18T21:44:29.169156"
+}

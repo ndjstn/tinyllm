@@ -475,6 +475,105 @@ def create_stress_test_visual():
     print("Created: stress_test_visual.png")
 
 
+def create_tool_comparison_visual():
+    """Create visualization comparing tool-assisted vs pure LLM."""
+    comparison_file = Path('benchmarks/results/tool_comparison.json')
+    if not comparison_file.exists():
+        print("tool_comparison.json not found, skipping")
+        return
+
+    with open(comparison_file) as f:
+        data = json.load(f)
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 6), facecolor=COLORS['bg_dark'])
+
+    fig.suptitle('Tool-Assisted vs Pure LLM Performance',
+                 fontsize=20, fontweight='bold', color=COLORS['text'], y=1.02)
+
+    results = data['results']
+    summary = data['summary']['math_queries']
+
+    # 1. Latency comparison bar chart
+    ax1 = axes[0]
+    ax1.set_facecolor(COLORS['bg_card'])
+
+    math_results = [r for r in results if r['category'] != 'general']
+    categories = [r['category'][:8] for r in math_results]
+    tool_latencies = [r['tool_latency_ms']/1000 for r in math_results]
+    pure_latencies = [r['pure_latency_ms']/1000 for r in math_results]
+
+    x = np.arange(len(categories))
+    width = 0.35
+
+    bars1 = ax1.bar(x - width/2, tool_latencies, width, label='With Tools',
+                   color=COLORS['primary'], alpha=0.85)
+    bars2 = ax1.bar(x + width/2, pure_latencies, width, label='Pure LLM',
+                   color=COLORS['secondary'], alpha=0.85)
+
+    ax1.set_ylabel('Latency (seconds)', fontsize=12, color=COLORS['text_muted'])
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(categories, rotation=45, ha='right', fontsize=10)
+    ax1.legend(facecolor=COLORS['bg_card'], edgecolor=COLORS['grid'],
+              labelcolor=COLORS['text'])
+    style_axis(ax1, 'Latency by Query Type')
+
+    # 2. Accuracy comparison
+    ax2 = axes[1]
+    ax2.set_facecolor(COLORS['bg_card'])
+
+    tool_correct = summary['tool_correct']
+    pure_correct = summary['pure_correct']
+    total = summary['total']
+
+    labels = ['With Tools', 'Pure LLM']
+    correct = [tool_correct, pure_correct]
+    colors = [COLORS['primary'], COLORS['secondary']]
+
+    bars = ax2.bar(labels, correct, color=colors, alpha=0.85,
+                   edgecolor='white', linewidth=2)
+
+    ax2.set_ylim(0, total + 1)
+    ax2.axhline(total, color=COLORS['text_muted'], linestyle='--', alpha=0.5)
+    ax2.text(1.1, total, f'Total: {total}', fontsize=11, color=COLORS['text_muted'])
+
+    for bar, val in zip(bars, correct):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2,
+                f'{val}/{total}', ha='center', fontsize=16, fontweight='bold',
+                color=COLORS['text'])
+
+    style_axis(ax2, 'Correct Answers', ylabel='Count')
+
+    # 3. Winner summary
+    ax3 = axes[2]
+    ax3.set_facecolor(COLORS['bg_card'])
+    ax3.axis('off')
+
+    # Summary box
+    summary_text = [
+        ("ACCURACY", "Tools Win", COLORS['success'], f"{tool_correct}/8 vs {pure_correct}/8"),
+        ("SPEED", "Pure LLM", COLORS['warning'], f"-{abs(summary['avg_tool_latency_ms'] - summary['avg_pure_latency_ms']):.0f}ms"),
+        ("VERDICT", "Use Tools", COLORS['primary'], "Accuracy > Speed"),
+    ]
+
+    for i, (label, winner, color, detail) in enumerate(summary_text):
+        y = 0.75 - i * 0.3
+        ax3.text(0.1, y, label, fontsize=14, fontweight='bold',
+                color=COLORS['text_muted'], transform=ax3.transAxes)
+        ax3.text(0.5, y, winner, fontsize=18, fontweight='bold',
+                color=color, transform=ax3.transAxes)
+        ax3.text(0.5, y - 0.08, detail, fontsize=11,
+                color=COLORS['text_muted'], transform=ax3.transAxes)
+
+    ax3.set_title('Key Findings', fontsize=16, fontweight='bold',
+                  color=COLORS['text'], pad=15)
+
+    plt.tight_layout()
+    plt.savefig('benchmarks/results/tool_comparison_visual.png', dpi=150,
+                facecolor=COLORS['bg_dark'], bbox_inches='tight')
+    plt.close()
+    print("Created: tool_comparison_visual.png")
+
+
 def main():
     """Generate all visualizations."""
     print("Generating professional visualizations...")
@@ -484,6 +583,7 @@ def main():
     create_architecture_visual()
     create_performance_dashboard()
     create_stress_test_visual()
+    create_tool_comparison_visual()
 
     print("-" * 40)
     print("Done! Check benchmarks/results/ for outputs.")
