@@ -1,0 +1,175 @@
+# Example graph demonstrating LoopNode usage
+# This graph shows different loop patterns and termination conditions
+
+id: loop_examples
+version: 1.0.0
+name: Loop Node Examples
+description: Demonstrates various loop patterns using LoopNode
+
+metadata:
+  created_at: "2025-01-01"
+  description: "Examples of iterative workflows with condition-based termination"
+  author: "TinyLLM"
+  tags:
+    - loop
+    - iteration
+    - examples
+
+nodes:
+  # Entry point
+  - id: entry
+    type: entry
+    name: Entry
+    description: Graph entry point
+
+  # Example 1: Fixed count loop - Run exactly 3 times
+  - id: loop.fixed_count
+    type: loop
+    name: Fixed Count Loop
+    description: Runs exactly 3 iterations
+    config:
+      body_node: model.process
+      condition_type: fixed_count
+      fixed_count: 3
+      max_iterations: 10
+      timeout_ms: 30000
+      collect_results: true
+      pass_iteration_number: true
+
+  # Example 2: Until success loop - Retry until success
+  - id: loop.retry
+    type: loop
+    name: Retry Loop
+    description: Retries until body node succeeds
+    config:
+      body_node: model.attempt_task
+      condition_type: until_success
+      max_iterations: 5
+      timeout_ms: 60000
+      continue_on_error: true
+      collect_results: true
+
+  # Example 3: Until condition loop - Run until success count reaches 3
+  - id: loop.until_threshold
+    type: loop
+    name: Until Threshold Loop
+    description: Runs until 3 successful iterations
+    config:
+      body_node: model.validate
+      condition_type: until_condition
+      condition_expression: "success_count >= 3"
+      max_iterations: 10
+      timeout_ms: 60000
+      continue_on_error: true
+
+  # Example 4: While condition loop - Run while iteration < 5
+  - id: loop.while_counter
+    type: loop
+    name: While Counter Loop
+    description: Runs while counter is below threshold
+    config:
+      body_node: model.increment
+      condition_type: while_condition
+      condition_expression: "iteration < 5"
+      max_iterations: 10
+      timeout_ms: 30000
+
+  # Example 5: Complex condition using last result
+  - id: loop.until_complete
+    type: loop
+    name: Until Complete Loop
+    description: Runs until output contains 'DONE'
+    config:
+      body_node: model.worker
+      condition_type: until_condition
+      condition_expression: "last_success and 'DONE' in str(last_output)"
+      max_iterations: 20
+      timeout_ms: 120000
+      continue_on_error: false
+
+  # Example 6: Loop with context variables
+  - id: loop.with_variables
+    type: loop
+    name: Variable-based Loop
+    description: Uses execution context variables in condition
+    config:
+      body_node: model.compute
+      condition_type: until_condition
+      condition_expression: "iteration >= variables.get('target_count', 5)"
+      max_iterations: 15
+      timeout_ms: 60000
+
+  # Body nodes for the loops
+  - id: model.process
+    type: model
+    name: Process Model
+    description: Basic processing model
+    config:
+      model: qwen2.5:3b
+      temperature: 0.7
+      system_prompt: "Process the input and return a result."
+
+  - id: model.attempt_task
+    type: model
+    name: Attempt Task Model
+    description: Model that may fail but can retry
+    config:
+      model: qwen2.5:3b
+      temperature: 0.8
+      system_prompt: "Attempt to complete the task. Return SUCCESS or FAILURE."
+
+  - id: model.validate
+    type: model
+    name: Validation Model
+    description: Validates input and returns success/failure
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: "Validate the input. Return VALID or INVALID."
+
+  - id: model.increment
+    type: model
+    name: Increment Model
+    description: Increments a counter
+    config:
+      model: qwen2.5:3b
+      temperature: 0.3
+      system_prompt: "Process the iteration and return a result."
+
+  - id: model.worker
+    type: model
+    name: Worker Model
+    description: Works on a task until complete
+    config:
+      model: qwen2.5:3b
+      temperature: 0.7
+      system_prompt: "Work on the task. Return 'DONE' when complete, or progress status."
+
+  - id: model.compute
+    type: model
+    name: Compute Model
+    description: Performs computation
+    config:
+      model: qwen2.5:3b
+      temperature: 0.5
+      system_prompt: "Perform computation on the input."
+
+  # Exit point
+  - id: exit
+    type: exit
+    name: Exit
+    description: Graph exit point
+
+edges:
+  - from_node: entry
+    to_node: loop.fixed_count
+  - from_node: loop.fixed_count
+    to_node: exit
+
+entry_points:
+  - entry
+
+exit_points:
+  - exit
+
+protected: []

@@ -192,6 +192,9 @@ tinyllm failures analyze --last 100
 | Strategy Generator | `src/tinyllm/expansion/strategies.py` | ✅ |
 | Expansion Engine | `src/tinyllm/expansion/engine.py` | ✅ |
 | Version Control | `src/tinyllm/expansion/versioning.py` | ✅ |
+| Node Spawning | `src/tinyllm/expansion/spawning.py` | ✅ |
+| Node Merging | `src/tinyllm/expansion/merging.py` | ✅ |
+| Adaptive Pruning | `src/tinyllm/expansion/pruning.py` | ✅ |
 
 ### Acceptance Criteria
 
@@ -288,7 +291,10 @@ tinyllm chat
 | Expansion (analyzer, strategies) | 35+ |
 | Memory (STM, LTM, store) | 40+ |
 | Versioning | 25 |
-| **Total** | **267 tests** |
+| Spawning | 53+ |
+| Merging | 35+ |
+| Pruning | 76+ |
+| **Total** | **457 tests** |
 
 ---
 
