@@ -91,6 +91,34 @@ from tinyllm.prompts import (
     set_default_config,
 )
 
+# Cache exports (Tasks 91-100)
+from tinyllm.cache import (
+    CacheBackend,
+    CacheEntry,
+    CacheMetrics,
+    CacheTier,
+    CachedOllamaClient,
+    CompressionAlgorithm,
+    InMemoryBackend,
+    InvalidationStrategy,
+    RedisBackend,
+    ResponseCache,
+    create_cached_client,
+    create_memory_cache,
+    create_redis_cache,
+)
+from tinyllm.cache_advanced import (
+    AdaptiveCache,
+    CacheCoherence,
+    CacheInvalidator,
+    CacheWarmer,
+    CompressedBackend,
+    CostModel,
+    RedisClusterBackend,
+    SemanticCache,
+    TieredCache,
+)
+
 __all__ = [
     "__version__",
     # Logging
@@ -160,4 +188,28 @@ __all__ = [
     "get_identity_correction",
     "get_default_config",
     "set_default_config",
+    # Cache
+    "CacheBackend",
+    "CacheEntry",
+    "CacheMetrics",
+    "CacheTier",
+    "CachedOllamaClient",
+    "CompressionAlgorithm",
+    "InMemoryBackend",
+    "InvalidationStrategy",
+    "RedisBackend",
+    "ResponseCache",
+    "create_cached_client",
+    "create_memory_cache",
+    "create_redis_cache",
+    # Advanced Cache (Tasks 91-100)
+    "AdaptiveCache",
+    "CacheCoherence",
+    "CacheInvalidator",
+    "CacheWarmer",
+    "CompressedBackend",
+    "CostModel",
+    "RedisClusterBackend",
+    "SemanticCache",
+    "TieredCache",
 ]
