@@ -159,3 +159,4 @@ logs/
 # Large files
 *.bin
 *.gguf
+.serena/
