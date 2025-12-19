@@ -345,3 +345,69 @@ class TestSamplingIntegration:
 
         # This should not be dropped
         logger.info("this_should_pass")
+
+
+class TestLogTraceCorrelation:
+    """Tests for log correlation with distributed traces (Task 47)."""
+
+    def test_trace_context_processor_exists(self):
+        """Test that add_trace_context processor is available."""
+        from tinyllm.logging import add_trace_context
+        assert add_trace_context is not None
+        assert callable(add_trace_context)
+
+    def test_trace_context_without_telemetry(self):
+        """Test that logs work even without telemetry enabled."""
+        from tinyllm.logging import add_trace_context
+
+        event_dict = {"event": "test_event"}
+        result = add_trace_context(None, "info", event_dict)
+
+        # Should not crash and should return event_dict
+        assert result is not None
+        assert result["event"] == "test_event"
+
+    def test_trace_context_with_mock_telemetry(self, monkeypatch):
+        """Test that trace context is injected when telemetry is active."""
+        from tinyllm.logging import add_trace_context
+
+        # Mock telemetry functions
+        test_trace_id = "test-trace-123"
+        test_span_id = "test-span-456"
+
+        def mock_get_trace_id():
+            return test_trace_id
+
+        def mock_get_span_id():
+            return test_span_id
+
+        # Add a mock telemetry module to sys.modules
+        import sys
+        from unittest.mock import MagicMock
+        mock_telemetry = MagicMock()
+        mock_telemetry.get_current_trace_id = mock_get_trace_id
+        mock_telemetry.get_current_span_id = mock_get_span_id
+        sys.modules['tinyllm.telemetry'] = mock_telemetry
+
+        try:
+            event_dict = {"event": "test_event"}
+            result = add_trace_context(None, "info", event_dict)
+
+            # Should have trace context injected
+            assert "trace_id" in result
+            assert result["trace_id"] == test_trace_id
+            assert "span_id" in result
+            assert result["span_id"] == test_span_id
+            assert result["event"] == "test_event"
+        finally:
+            # Clean up
+            if 'tinyllm.telemetry' in sys.modules:
+                del sys.modules['tinyllm.telemetry']
+
+    def test_trace_correlation_in_log_flow(self):
+        """Test that trace correlation works in the full logging flow."""
+        configure_logging()
+        logger = get_logger(__name__)
+
+        # This should not crash even without telemetry
+        logger.info("test_with_potential_trace_context", test_data="value")
