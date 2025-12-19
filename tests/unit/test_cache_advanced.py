@@ -104,8 +104,8 @@ class TestCachePrefetcher:
         # Check that entries were prefetched
         result1 = await cache.get("key1")
         result2 = await cache.get("key2")
-        assert result1 is None  # Won't be found because generator returns response, not cache key
-        assert result2 is None
+        assert result1 is not None  # Should be found after prefetch
+        assert result2 is not None
 
 
 # Task 102: Cache Partitioning Tests
@@ -507,11 +507,6 @@ class TestCacheBypassRules:
     @pytest.mark.asyncio
     async def test_size_bypass_rule(self, sample_response):
         """Test size-based bypass rule."""
-        rule = SizeBypassRule(max_size_bytes=10)
-
-        # Small response should not bypass
-        assert not rule.should_bypass("key", response=sample_response)
-
         # Create large response
         large_response = GenerateResponse(
             model="test",
@@ -522,6 +517,12 @@ class TestCacheBypassRules:
             eval_count=10,
         )
 
+        rule = SizeBypassRule(max_size_bytes=100)
+
+        # Small response should not bypass (sample response is ~24 bytes)
+        assert not rule.should_bypass("key", response=sample_response)
+
+        # Large response should bypass
         assert rule.should_bypass("key", response=large_response)
 
     @pytest.mark.asyncio

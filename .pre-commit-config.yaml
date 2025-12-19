@@ -36,3 +36,10 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [push]
+
+      - id: coverage-gate
+        name: Coverage Gate (>80%)
+        entry: python scripts/check_coverage.py
+        language: system
+        pass_filenames: false
+        stages: [push]

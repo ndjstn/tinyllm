@@ -1847,6 +1847,78 @@ def debug_test_trace():
 
     console.print("\n[dim]Check the logs above for trace_id and span_id fields[/dim]")
 
+@debug_app.command("error-rate")
+def debug_error_rate():
+    """Show current error rate statistics and thresholds.
+
+    Displays real-time error metrics including:
+    - Current error count in the sliding window
+    - Error rate thresholds
+    - Breakdown by error type
+    - Alert status
+    """
+    from tinyllm.metrics import get_metrics_collector
+
+    collector = get_metrics_collector()
+    stats = collector.get_current_error_rate()
+
+    console.print("\n[bold]Error Rate Statistics[/bold]\n")
+
+    # Status indicator
+    if stats["threshold_exceeded"]:
+        status_color = "red"
+        status_text = "ALERT"
+    else:
+        status_color = "green"
+        status_text = "OK"
+
+    console.print(f"Status: [{status_color}]{status_text}[/{status_color}]")
+    console.print(f"\nWindow: {stats['window_seconds']}s")
+    console.print(f"Error Count: {stats['error_count']}")
+    console.print(f"Count Threshold: {stats['error_count_threshold']}")
+
+    if stats['error_count'] >= stats['error_count_threshold']:
+        console.print(f"\n[red]⚠ Error count threshold exceeded![/red]")
+
+    # Error breakdown
+    if stats['error_types']:
+        console.print(f"\n[bold]Errors by Type:[/bold]")
+        for error_type, count in sorted(stats['error_types'].items(), key=lambda x: x[1], reverse=True):
+            console.print(f"  {error_type}: {count}")
+    else:
+        console.print(f"\n[dim]No errors in current window[/dim]")
+
+    console.print()
+
+
+@debug_app.command("sampling-stats")
+def debug_sampling_stats():
+    """Show log sampling statistics.
+
+    Displays information about log sampling configuration
+    and effectiveness for high-volume scenarios.
+    """
+    from tinyllm.logging import _log_sampler
+
+    console.print("\n[bold]Log Sampling Statistics[/bold]\n")
+
+    if _log_sampler is None:
+        console.print("[dim]Log sampling is not configured[/dim]")
+        console.print("\n[dim]To enable sampling, use:[/dim]")
+        console.print("[dim]  from tinyllm.logging import configure_log_sampling[/dim]")
+        console.print("[dim]  configure_log_sampling(sample_rate=0.1)[/dim]")
+    else:
+        console.print(f"Sample Rate: {_log_sampler.sample_rate or 'N/A'}")
+        console.print(f"Max Per Second: {_log_sampler.max_per_second or 'N/A'}")
+        console.print(f"Hash-Based: {_log_sampler.hash_based}")
+
+        if _log_sampler.max_per_second:
+            console.print(f"\nCurrent Window:")
+            console.print(f"  Count: {_log_sampler._count}")
+            console.print(f"  Window Size: {_log_sampler._window}s")
+
+    console.print()
+
 
 if __name__ == "__main__":
     app()

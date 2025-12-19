@@ -60,7 +60,7 @@ test-cov:
 	.venv/bin/python -m pytest tests/ --cov=src/tinyllm --cov-report=html --cov-report=term
 
 test-cov-gate:
-	.venv/bin/python -m pytest tests/ --cov=src/tinyllm --cov-report=html --cov-report=term --cov-fail-under=80
+	.venv/bin/python scripts/check_coverage.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
