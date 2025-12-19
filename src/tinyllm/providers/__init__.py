@@ -52,6 +52,116 @@ from tinyllm.providers.anthropic_client import TextContent as AnthropicTextConte
 from tinyllm.providers.anthropic_client import ToolChoice as AnthropicToolChoice
 from tinyllm.providers.anthropic_client import Usage as AnthropicUsage
 
+# Mistral client imports
+from tinyllm.providers.mistral_client import (
+    MistralClient,
+    MistralConfig,
+    ChatMessage as MistralChatMessage,
+    MessageRole as MistralMessageRole,
+    ChatCompletionRequest as MistralChatCompletionRequest,
+    ChatCompletionResponse as MistralChatCompletionResponse,
+    EmbeddingRequest as MistralEmbeddingRequest,
+    EmbeddingResponse as MistralEmbeddingResponse,
+    FunctionCall as MistralFunctionCall,
+    FunctionDefinition as MistralFunctionDefinition,
+    ToolCall as MistralToolCall,
+    ToolDefinition as MistralToolDefinition,
+    ToolChoice as MistralToolChoice,
+    SafeMode,
+    ResponseFormat,
+    get_shared_mistral_client,
+    close_all_mistral_clients,
+)
+from tinyllm.providers.mistral_client import ImageContent as MistralImageContent
+from tinyllm.providers.mistral_client import TextContent as MistralTextContent
+from tinyllm.providers.mistral_client import Usage as MistralUsage
+from tinyllm.providers.mistral_client import ImageUrl as MistralImageUrl
+from tinyllm.providers.mistral_client import ImageUrlDetail as MistralImageUrlDetail
+from tinyllm.providers.mistral_client import RateLimiter as MistralRateLimiter
+from tinyllm.providers.mistral_client import CircuitBreaker as MistralCircuitBreaker
+
+# Cohere client imports
+from tinyllm.providers.cohere_client import (
+    CohereClient,
+    ChatMessage as CohereChatMessage,
+    ChatRole as CohereChatRole,
+    ChatRequest as CohereChatRequest,
+    ChatResponse as CohereChatResponse,
+    ChatStreamEvent as CohereChatStreamEvent,
+    EmbedRequest as CohereEmbedRequest,
+    EmbedResponse as CohereEmbedResponse,
+    Embedding as CohereEmbedding,
+    RerankRequest as CohereRerankRequest,
+    RerankResponse as CohereRerankResponse,
+    RerankResult as CohereRerankResult,
+    RerankDocument as CohereRerankDocument,
+    Tool as CohereTool,
+    ToolCall as CohereToolCall,
+    ToolResult as CohereToolResult,
+    ToolParameterDefinition as CohereToolParameterDefinition,
+    TokenCount as CohereTokenCount,
+    get_shared_cohere_client,
+    close_all_cohere_clients,
+)
+from tinyllm.providers.cohere_client import RateLimiter as CohereRateLimiter
+from tinyllm.providers.cohere_client import CircuitBreaker as CohereCircuitBreaker
+
+# Gemini client imports
+from tinyllm.providers.gemini_client import (
+    BatchEmbedContentsResponse,
+    Blob,
+    Candidate,
+    Content as GeminiContent,
+    ContentEmbedding,
+    EmbedContentResponse,
+    FileData,
+    FileDataPart,
+    FinishReason,
+    FunctionCall as GeminiFunctionCall,
+    FunctionCallPart,
+    FunctionDeclaration as GeminiFunctionDeclaration,
+    FunctionResponse,
+    FunctionResponsePart,
+    GenerateContentResponse,
+    GenerationConfig,
+    GeminiClient,
+    HarmBlockThreshold,
+    HarmCategory,
+    InlineData,
+    SafetyRating,
+    SafetySetting,
+    Tool as GeminiTool,
+    ToolConfig,
+    UsageMetadata,
+    close_all_gemini_clients,
+    get_shared_gemini_client,
+)
+from tinyllm.providers.gemini_client import TextPart as GeminiTextPart
+from tinyllm.providers.gemini_client import RateLimiter as GeminiRateLimiter
+from tinyllm.providers.gemini_client import CircuitBreaker as GeminiCircuitBreaker
+
+# Groq client imports
+from tinyllm.providers.groq_client import (
+    GroqClient,
+    GroqConfig,
+    close_all_groq_clients,
+    get_shared_groq_client,
+)
+from tinyllm.providers.groq_client import ChatMessage as GroqChatMessage
+from tinyllm.providers.groq_client import ChatCompletionRequest as GroqChatCompletionRequest
+from tinyllm.providers.groq_client import ChatCompletionResponse as GroqChatCompletionResponse
+from tinyllm.providers.groq_client import ImageContent as GroqImageContent
+from tinyllm.providers.groq_client import MessageRole as GroqMessageRole
+from tinyllm.providers.groq_client import TextContent as GroqTextContent
+from tinyllm.providers.groq_client import ToolDefinition as GroqToolDefinition
+from tinyllm.providers.groq_client import ToolCall as GroqToolCall
+from tinyllm.providers.groq_client import FunctionDefinition as GroqFunctionDefinition
+from tinyllm.providers.groq_client import Usage as GroqUsage
+from tinyllm.providers.groq_client import RateLimiter as GroqRateLimiter
+from tinyllm.providers.groq_client import CircuitBreaker as GroqCircuitBreaker
+from tinyllm.providers.groq_client import ImageUrl as GroqImageUrl
+from tinyllm.providers.groq_client import ImageUrlDetail as GroqImageUrlDetail
+
 __all__ = [
     # OpenAI
     "OpenAIClient",
@@ -100,4 +210,102 @@ __all__ = [
     "ToolUseBlock",
     "get_shared_anthropic_client",
     "close_all_anthropic_clients",
+    # Mistral
+    "MistralClient",
+    "MistralConfig",
+    "MistralChatMessage",
+    "MistralMessageRole",
+    "MistralChatCompletionRequest",
+    "MistralChatCompletionResponse",
+    "MistralEmbeddingRequest",
+    "MistralEmbeddingResponse",
+    "MistralFunctionCall",
+    "MistralFunctionDefinition",
+    "MistralToolCall",
+    "MistralToolDefinition",
+    "MistralToolChoice",
+    "MistralImageContent",
+    "MistralTextContent",
+    "MistralUsage",
+    "MistralImageUrl",
+    "MistralImageUrlDetail",
+    "MistralRateLimiter",
+    "MistralCircuitBreaker",
+    "SafeMode",
+    "ResponseFormat",
+    "get_shared_mistral_client",
+    "close_all_mistral_clients",
+    # Cohere
+    "CohereClient",
+    "CohereChatMessage",
+    "CohereChatRole",
+    "CohereChatRequest",
+    "CohereChatResponse",
+    "CohereChatStreamEvent",
+    "CohereEmbedRequest",
+    "CohereEmbedResponse",
+    "CohereEmbedding",
+    "CohereRerankRequest",
+    "CohereRerankResponse",
+    "CohereRerankResult",
+    "CohereRerankDocument",
+    "CohereTool",
+    "CohereToolCall",
+    "CohereToolResult",
+    "CohereToolParameterDefinition",
+    "CohereTokenCount",
+    "CohereRateLimiter",
+    "CohereCircuitBreaker",
+    "get_shared_cohere_client",
+    "close_all_cohere_clients",
+    # Gemini
+    "GeminiClient",
+    "GeminiContent",
+    "GeminiTextPart",
+    "GeminiFunctionCall",
+    "GeminiFunctionDeclaration",
+    "GeminiTool",
+    "GenerateContentResponse",
+    "GenerationConfig",
+    "BatchEmbedContentsResponse",
+    "Blob",
+    "Candidate",
+    "ContentEmbedding",
+    "EmbedContentResponse",
+    "FileData",
+    "FileDataPart",
+    "FinishReason",
+    "FunctionCallPart",
+    "FunctionResponse",
+    "FunctionResponsePart",
+    "HarmBlockThreshold",
+    "HarmCategory",
+    "InlineData",
+    "SafetyRating",
+    "SafetySetting",
+    "ToolConfig",
+    "UsageMetadata",
+    "GeminiRateLimiter",
+    "GeminiCircuitBreaker",
+    "get_shared_gemini_client",
+    "close_all_gemini_clients",
+    # Groq
+    "GroqClient",
+    "GroqConfig",
+    "GroqChatMessage",
+    "GroqMessageRole",
+    "GroqChatCompletionRequest",
+    "GroqChatCompletionResponse",
+    "GroqImageContent",
+    "GroqTextContent",
+    "GroqToolDefinition",
+    "GroqToolCall",
+    "GroqFunctionDefinition",
+    "GroqUsage",
+    "GroqRateLimiter",
+    "GroqCircuitBreaker",
+    "GroqImageUrl",
+    "GroqImageUrlDetail",
+    "get_shared_groq_client",
+    "close_all_groq_clients",
 ]
