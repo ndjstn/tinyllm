@@ -6,9 +6,21 @@ cognitive architecture, enabling self-improvement through recursive expansion.
 
 __version__ = "0.1.0"
 
+# Logging exports
+from tinyllm.logging import (
+    bind_context,
+    clear_context,
+    configure_logging,
+    get_logger,
+    unbind_context,
+)
+
 # Core exports
 from tinyllm.core import (
     BaseNode,
+    CompletionAnalysis,
+    CompletionSignals,
+    CompletionStatus,
     Edge,
     ExecutionContext,
     ExecutionError,
@@ -25,12 +37,14 @@ from tinyllm.core import (
     NodeRegistry,
     NodeResult,
     NodeStats,
+    TaskCompletionDetector,
     TaskPayload,
     TaskResponse,
     ToolCall,
     ToolResult,
     TraceRecorder,
     ValidationError,
+    is_task_complete,
     load_graph,
 )
 
@@ -54,10 +68,46 @@ from tinyllm.tools import (
     register_default_tools,
 )
 
+# Metrics exports
+from tinyllm.metrics import (
+    MetricsCollector,
+    get_metrics_collector,
+    start_metrics_server,
+)
+
+# Prompts exports
+from tinyllm.prompts import (
+    ASSISTANT_IDENTITY,
+    CHAT_SYSTEM_PROMPT,
+    TASK_SYSTEM_PROMPT,
+    ROUTER_SYSTEM_PROMPT,
+    SPECIALIST_SYSTEM_PROMPT,
+    JUDGE_SYSTEM_PROMPT,
+    PromptConfig,
+    get_chat_prompt,
+    get_task_prompt,
+    get_identity_correction,
+    get_default_config,
+    set_default_config,
+)
+
 __all__ = [
     "__version__",
+    # Logging
+    "configure_logging",
+    "get_logger",
+    "bind_context",
+    "unbind_context",
+    "clear_context",
+    # Metrics
+    "MetricsCollector",
+    "get_metrics_collector",
+    "start_metrics_server",
     # Core
     "BaseNode",
+    "CompletionAnalysis",
+    "CompletionSignals",
+    "CompletionStatus",
     "Edge",
     "ExecutionContext",
     "ExecutionError",
@@ -74,12 +124,14 @@ __all__ = [
     "NodeRegistry",
     "NodeResult",
     "NodeStats",
+    "TaskCompletionDetector",
     "TaskPayload",
     "TaskResponse",
     "ToolCall",
     "ToolResult",
     "TraceRecorder",
     "ValidationError",
+    "is_task_complete",
     "load_graph",
     # Config
     "Config",
@@ -95,4 +147,17 @@ __all__ = [
     "ToolMetadata",
     "ToolRegistry",
     "register_default_tools",
+    # Prompts
+    "ASSISTANT_IDENTITY",
+    "CHAT_SYSTEM_PROMPT",
+    "TASK_SYSTEM_PROMPT",
+    "ROUTER_SYSTEM_PROMPT",
+    "SPECIALIST_SYSTEM_PROMPT",
+    "JUDGE_SYSTEM_PROMPT",
+    "PromptConfig",
+    "get_chat_prompt",
+    "get_task_prompt",
+    "get_identity_correction",
+    "get_default_config",
+    "set_default_config",
 ]
