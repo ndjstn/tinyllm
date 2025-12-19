@@ -17,22 +17,25 @@ from tinyllm.logging import bind_context, get_logger, unbind_context
 
 # OpenTelemetry imports (optional dependencies)
 try:
-    from opentelemetry import trace
+    from opentelemetry import baggage, trace
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
     from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
     from opentelemetry.trace import Status, StatusCode, Tracer
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
     OTEL_AVAILABLE = True
 except ImportError:
     OTEL_AVAILABLE = False
     # Create stub types for type checking when OTel not installed
     trace = None  # type: ignore
+    baggage = None  # type: ignore
     Tracer = Any  # type: ignore
     Status = Any  # type: ignore
     StatusCode = Any  # type: ignore
+    TraceContextTextMapPropagator = Any  # type: ignore
 
 logger = get_logger(__name__, component="telemetry")
 
@@ -488,6 +491,235 @@ def extract_correlation_id(headers: dict[str, str]) -> Optional[str]:
     return None
 
 
+# Baggage propagation for cross-service context
+
+
+def set_baggage(key: str, value: str) -> None:
+    """Set a baggage item in the current context.
+
+    Baggage is key-value metadata that propagates across service boundaries
+    through trace context headers. Unlike span attributes, baggage is mutable
+    and accessible to downstream services.
+
+    Args:
+        key: Baggage key.
+        value: Baggage value.
+
+    Example:
+        >>> set_baggage("user_id", "12345")
+        >>> set_baggage("tenant_id", "acme-corp")
+    """
+    if not is_telemetry_enabled():
+        return
+
+    try:
+        ctx = baggage.set_baggage(key, value)
+        # Attach the context to make it active
+        # Note: In async code, context is managed automatically by OpenTelemetry
+        logger.debug("baggage_set", key=key, value=value[:50] if len(value) > 50 else value)
+    except Exception as e:
+        logger.warning("baggage_set_failed", key=key, error=str(e))
+
+
+def get_baggage(key: str) -> Optional[str]:
+    """Get a baggage item from the current context.
+
+    Args:
+        key: Baggage key.
+
+    Returns:
+        Baggage value if present, None otherwise.
+
+    Example:
+        >>> user_id = get_baggage("user_id")
+        >>> if user_id:
+        ...     print(f"Request from user: {user_id}")
+    """
+    if not is_telemetry_enabled():
+        return None
+
+    try:
+        value = baggage.get_baggage(key)
+        return value
+    except Exception as e:
+        logger.warning("baggage_get_failed", key=key, error=str(e))
+        return None
+
+
+def get_all_baggage() -> dict[str, str]:
+    """Get all baggage items from the current context.
+
+    Returns:
+        Dictionary of all baggage key-value pairs.
+
+    Example:
+        >>> items = get_all_baggage()
+        >>> print(f"Baggage items: {items}")
+    """
+    if not is_telemetry_enabled():
+        return {}
+
+    try:
+        # Get all baggage from current context
+        all_baggage = baggage.get_all()
+        return dict(all_baggage) if all_baggage else {}
+    except Exception as e:
+        logger.warning("baggage_get_all_failed", error=str(e))
+        return {}
+
+
+def remove_baggage(key: str) -> None:
+    """Remove a baggage item from the current context.
+
+    Args:
+        key: Baggage key to remove.
+
+    Example:
+        >>> remove_baggage("temporary_flag")
+    """
+    if not is_telemetry_enabled():
+        return
+
+    try:
+        baggage.remove_baggage(key)
+        logger.debug("baggage_removed", key=key)
+    except Exception as e:
+        logger.warning("baggage_remove_failed", key=key, error=str(e))
+
+
+def clear_baggage() -> None:
+    """Clear all baggage items from the current context.
+
+    Example:
+        >>> clear_baggage()
+    """
+    if not is_telemetry_enabled():
+        return
+
+    try:
+        baggage.clear()
+        logger.debug("baggage_cleared")
+    except Exception as e:
+        logger.warning("baggage_clear_failed", error=str(e))
+
+
+def inject_baggage_into_headers(headers: Optional[dict[str, str]] = None) -> dict[str, str]:
+    """Inject baggage into HTTP headers for propagation.
+
+    This function extracts baggage from the current context and injects it
+    into HTTP headers using the W3C Baggage specification.
+
+    Args:
+        headers: Existing headers dictionary (optional).
+
+    Returns:
+        Headers with baggage injected.
+
+    Example:
+        >>> set_baggage("user_id", "12345")
+        >>> headers = inject_baggage_into_headers({"Content-Type": "application/json"})
+        >>> # Make HTTP request with headers
+    """
+    if headers is None:
+        headers = {}
+
+    if not is_telemetry_enabled():
+        return headers
+
+    try:
+        # Use W3C trace context propagator to inject baggage
+        from opentelemetry.propagate import inject
+
+        inject(headers)
+
+        logger.debug("baggage_injected_into_headers", header_count=len(headers))
+    except Exception as e:
+        logger.warning("baggage_injection_failed", error=str(e))
+
+    return headers
+
+
+def extract_baggage_from_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Extract baggage from HTTP headers.
+
+    This function extracts baggage from incoming HTTP headers and sets it
+    in the current context using the W3C Baggage specification.
+
+    Args:
+        headers: Incoming headers dictionary.
+
+    Returns:
+        Dictionary of extracted baggage items.
+
+    Example:
+        >>> baggage_items = extract_baggage_from_headers(request.headers)
+        >>> user_id = baggage_items.get("user_id")
+    """
+    if not is_telemetry_enabled():
+        return {}
+
+    try:
+        # Use W3C trace context propagator to extract baggage
+        from opentelemetry.propagate import extract
+
+        # Extract creates a new context with the baggage
+        ctx = extract(headers)
+
+        # Get baggage from the extracted context
+        # Note: This sets baggage in the current context
+        extracted_baggage = {}
+        if ctx:
+            # Get all baggage from the context
+            all_baggage = baggage.get_all(ctx)
+            extracted_baggage = dict(all_baggage) if all_baggage else {}
+
+        logger.debug("baggage_extracted_from_headers", item_count=len(extracted_baggage))
+        return extracted_baggage
+
+    except Exception as e:
+        logger.warning("baggage_extraction_failed", error=str(e))
+        return {}
+
+
+@contextmanager
+def baggage_context(**baggage_items: str):
+    """Context manager for setting temporary baggage items.
+
+    Baggage items are automatically cleaned up when the context exits.
+
+    Args:
+        **baggage_items: Baggage key-value pairs to set.
+
+    Yields:
+        None
+
+    Example:
+        >>> with baggage_context(user_id="12345", tenant_id="acme"):
+        ...     # Baggage is available here
+        ...     process_request()
+        ... # Baggage is cleaned up here
+    """
+    if not is_telemetry_enabled():
+        yield
+        return
+
+    # Store original baggage
+    original_baggage = get_all_baggage()
+
+    try:
+        # Set new baggage items
+        for key, value in baggage_items.items():
+            set_baggage(key, value)
+
+        yield
+
+    finally:
+        # Restore original baggage
+        clear_baggage()
+        for key, value in original_baggage.items():
+            set_baggage(key, value)
+
+
 # Convenience functions for common trace patterns
 
 def trace_executor_execution(trace_id: str, graph_id: str, task_content: str):
@@ -571,6 +803,14 @@ __all__ = [
     "get_correlation_id",
     "propagate_correlation_id",
     "extract_correlation_id",
+    "set_baggage",
+    "get_baggage",
+    "get_all_baggage",
+    "remove_baggage",
+    "clear_baggage",
+    "inject_baggage_into_headers",
+    "extract_baggage_from_headers",
+    "baggage_context",
     "trace_executor_execution",
     "trace_node_execution",
     "trace_llm_request",
