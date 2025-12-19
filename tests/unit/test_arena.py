@@ -81,7 +81,7 @@ def test_arena_stats():
     # Initially empty
     stats = arena.get_stats()
     assert stats.object_count == 0
-    assert stats.chunk_count == 1  # One chunk always allocated
+    assert stats.chunk_count == 0  # No chunks until first allocation
 
     # Add some objects
     for i in range(5):
@@ -89,6 +89,7 @@ def test_arena_stats():
 
     stats = arena.get_stats()
     assert stats.object_count == 5
+    assert stats.chunk_count >= 1  # At least one chunk
     assert stats.total_used > 0
     assert stats.utilization > 0.0
 
