@@ -1,0 +1,73 @@
+name: Publish Metrics
+
+on:
+  workflow_run:
+    workflows: ["Model Benchmarks"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish Metrics to README
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download benchmark results
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: benchmark.yml
+          name: benchmark-results-*
+          path: benchmark_results/
+
+      - name: Update README with metrics
+        run: |
+          # Find the latest results
+          LATEST=$(ls -t benchmark_results/*/results.json 2>/dev/null | head -1)
+
+          if [ -z "$LATEST" ]; then
+            echo "No benchmark results found"
+            exit 0
+          fi
+
+          # Generate metrics table
+          python3 << 'EOF'
+          import json
+          import datetime
+
+          # Read results
+          with open("$LATEST") as f:
+              results = json.load(f)
+
+          # Generate markdown
+          md = f"""
+          ## Latest Benchmarks
+
+          > Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M UTC')}
+          > Run ID: {results.get('run_id', 'N/A')}
+
+          ### Model Performance
+
+          | Model | Task | Latency (p50) | Latency (p99) | Success Rate | Tokens/s |
+          |-------|------|---------------|---------------|--------------|----------|
+          """
+
+          for model_result in results.get('models', []):
+              model = model_result['model']
+              for task in model_result.get('tasks', []):
+                  md += f"| {model} | {task['name']} | {task['p50_ms']}ms | {task['p99_ms']}ms | {task['success_rate']}% | {task['tokens_per_sec']} |\n"
+
+          print(md)
+          EOF
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: update benchmark metrics [skip ci]"
+          git push

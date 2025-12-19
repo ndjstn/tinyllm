@@ -186,6 +186,38 @@ Small models handle routing (fast, cheap). Larger models only used for judging/g
 
 ---
 
+## Benchmarks
+
+> **Hardware**: AMD Ryzen 7 3700X (16 threads) | 128GB RAM | 2× RTX 3060 (24GB VRAM)
+>
+> *Run `tinyllm benchmark` to reproduce on your hardware*
+
+### Routing Performance
+
+| Model | Task | Accuracy | Latency (p50) | Latency (p99) | Throughput |
+|-------|------|----------|---------------|---------------|------------|
+| qwen2.5:0.5b | classification | *pending* | *pending* | *pending* | *pending* |
+| tinyllama | classification | *pending* | *pending* | *pending* | *pending* |
+
+### Specialist Performance
+
+| Model | Task | Success Rate | Avg Latency | Tokens/s |
+|-------|------|--------------|-------------|----------|
+| granite-code:3b | code generation | *pending* | *pending* | *pending* |
+| qwen2.5:3b | general QA | *pending* | *pending* | *pending* |
+| phi3:mini | math solving | *pending* | *pending* | *pending* |
+
+### Tool vs No-Tool Comparison
+
+| Task | Model Only | Model + Tool | Improvement |
+|------|------------|--------------|-------------|
+| Math (arithmetic) | *pending* | *pending* | *pending* |
+| Code execution | *pending* | *pending* | *pending* |
+
+*Benchmarks are updated automatically via GitHub Actions. See [benchmark workflow](.github/workflows/benchmark.yml).*
+
+---
+
 ## Documentation
 
 | Document | Description |
