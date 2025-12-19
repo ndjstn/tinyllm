@@ -296,5 +296,294 @@ def clear_context() -> None:
     structlog.contextvars.clear_contextvars()
 
 
+# Request/Response logging with redaction
+class RequestResponseLogger:
+    """Logger for request/response data with sensitive data redaction.
+
+    Automatically redacts sensitive information like API keys, passwords,
+    tokens, and PII before logging.
+    """
+
+    # Patterns for sensitive data detection
+    SENSITIVE_PATTERNS: List[tuple[str, Pattern]] = [
+        # API keys and tokens
+        ("api_key", re.compile(r"(api[_-]?key|apikey)[\s:=]+['\"]?([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)),
+        ("bearer_token", re.compile(r"bearer[\s]+([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)),
+        ("auth_token", re.compile(r"(auth[_-]?token|token)[\s:=]+['\"]?([a-zA-Z0-9_\-\.]+)", re.IGNORECASE)),
+        # Passwords
+        ("password", re.compile(r"(password|passwd|pwd)[\s:=]+['\"]?([^\s'\"]+)", re.IGNORECASE)),
+        # Credit card numbers (basic pattern)
+        ("credit_card", re.compile(r"\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b")),
+        # Email addresses (PII)
+        ("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")),
+        # SSN (US)
+        ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+        # Phone numbers (basic)
+        ("phone", re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b")),
+        # AWS keys
+        ("aws_key", re.compile(r"(AKIA[0-9A-Z]{16})", re.IGNORECASE)),
+        # Private keys
+        ("private_key", re.compile(r"-----BEGIN.*PRIVATE KEY-----", re.IGNORECASE)),
+    ]
+
+    # Sensitive field names (case-insensitive)
+    SENSITIVE_FIELDS = {
+        "password",
+        "passwd",
+        "pwd",
+        "api_key",
+        "apikey",
+        "api-key",
+        "secret",
+        "token",
+        "auth",
+        "authorization",
+        "credit_card",
+        "creditcard",
+        "ssn",
+        "social_security",
+        "private_key",
+        "privatekey",
+    }
+
+    def __init__(self, max_length: int = 1000, redact_patterns: bool = True):
+        """Initialize request/response logger.
+
+        Args:
+            max_length: Maximum length of logged content before truncation.
+            redact_patterns: Enable pattern-based redaction.
+        """
+        self.max_length = max_length
+        self.redact_patterns = redact_patterns
+        self.logger = get_logger(__name__, component="request_logger")
+
+    def redact_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Redact sensitive fields from dictionary.
+
+        Args:
+            data: Dictionary to redact.
+
+        Returns:
+            Redacted dictionary.
+        """
+        redacted = {}
+        for key, value in data.items():
+            key_lower = key.lower()
+
+            # Check if field name is sensitive
+            if any(sensitive in key_lower for sensitive in self.SENSITIVE_FIELDS):
+                redacted[key] = "[REDACTED]"
+            elif isinstance(value, dict):
+                redacted[key] = self.redact_dict(value)
+            elif isinstance(value, list):
+                redacted[key] = [
+                    self.redact_dict(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            elif isinstance(value, str):
+                redacted[key] = self.redact_string(value)
+            else:
+                redacted[key] = value
+
+        return redacted
+
+    def redact_string(self, text: str) -> str:
+        """Redact sensitive patterns from string.
+
+        Args:
+            text: String to redact.
+
+        Returns:
+            Redacted string.
+        """
+        if not self.redact_patterns:
+            return text
+
+        redacted = text
+        for pattern_name, pattern in self.SENSITIVE_PATTERNS:
+            redacted = pattern.sub(f"[REDACTED_{pattern_name.upper()}]", redacted)
+
+        return redacted
+
+    def truncate(self, text: str) -> str:
+        """Truncate text to max length.
+
+        Args:
+            text: Text to truncate.
+
+        Returns:
+            Truncated text with ellipsis if needed.
+        """
+        if len(text) <= self.max_length:
+            return text
+
+        return text[: self.max_length] + "... [truncated]"
+
+    def log_request(
+        self,
+        request_id: str,
+        method: str,
+        path: str,
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[Any] = None,
+    ) -> None:
+        """Log incoming request with redaction.
+
+        Args:
+            request_id: Unique request identifier.
+            method: HTTP method.
+            path: Request path.
+            headers: Request headers.
+            body: Request body.
+        """
+        log_data: Dict[str, Any] = {
+            "request_id": request_id,
+            "method": method,
+            "path": path,
+        }
+
+        # Redact headers
+        if headers:
+            log_data["headers"] = self.redact_dict(headers)
+
+        # Redact and truncate body
+        if body:
+            if isinstance(body, dict):
+                redacted_body = self.redact_dict(body)
+                body_str = str(redacted_body)
+            else:
+                body_str = str(body)
+                body_str = self.redact_string(body_str)
+
+            log_data["body"] = self.truncate(body_str)
+
+        self.logger.info("incoming_request", **log_data)
+
+    def log_response(
+        self,
+        request_id: str,
+        status_code: int,
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[Any] = None,
+        duration_ms: Optional[float] = None,
+    ) -> None:
+        """Log outgoing response with redaction.
+
+        Args:
+            request_id: Unique request identifier.
+            status_code: HTTP status code.
+            headers: Response headers.
+            body: Response body.
+            duration_ms: Request duration in milliseconds.
+        """
+        log_data: Dict[str, Any] = {
+            "request_id": request_id,
+            "status_code": status_code,
+        }
+
+        if duration_ms is not None:
+            log_data["duration_ms"] = round(duration_ms, 2)
+
+        # Redact headers
+        if headers:
+            log_data["headers"] = self.redact_dict(headers)
+
+        # Redact and truncate body
+        if body:
+            if isinstance(body, dict):
+                redacted_body = self.redact_dict(body)
+                body_str = str(redacted_body)
+            else:
+                body_str = str(body)
+                body_str = self.redact_string(body_str)
+
+            log_data["body"] = self.truncate(body_str)
+
+        self.logger.info("outgoing_response", **log_data)
+
+    def log_llm_request(
+        self,
+        request_id: str,
+        model: str,
+        prompt: str,
+        parameters: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Log LLM API request with redaction.
+
+        Args:
+            request_id: Unique request identifier.
+            model: Model name.
+            prompt: User prompt (will be truncated).
+            parameters: Model parameters.
+        """
+        log_data: Dict[str, Any] = {
+            "request_id": request_id,
+            "model": model,
+            "prompt": self.truncate(self.redact_string(prompt)),
+        }
+
+        if parameters:
+            log_data["parameters"] = self.redact_dict(parameters)
+
+        self.logger.info("llm_request", **log_data)
+
+    def log_llm_response(
+        self,
+        request_id: str,
+        model: str,
+        response: str,
+        tokens_used: Optional[int] = None,
+        duration_ms: Optional[float] = None,
+    ) -> None:
+        """Log LLM API response with redaction.
+
+        Args:
+            request_id: Unique request identifier.
+            model: Model name.
+            response: Model response (will be truncated).
+            tokens_used: Number of tokens used.
+            duration_ms: Request duration in milliseconds.
+        """
+        log_data: Dict[str, Any] = {
+            "request_id": request_id,
+            "model": model,
+            "response": self.truncate(self.redact_string(response)),
+        }
+
+        if tokens_used is not None:
+            log_data["tokens_used"] = tokens_used
+
+        if duration_ms is not None:
+            log_data["duration_ms"] = round(duration_ms, 2)
+
+        self.logger.info("llm_response", **log_data)
+
+
+# Global request/response logger instance
+_request_logger: Optional[RequestResponseLogger] = None
+
+
+def get_request_logger(
+    max_length: int = 1000,
+    redact_patterns: bool = True,
+) -> RequestResponseLogger:
+    """Get or create the global request/response logger.
+
+    Args:
+        max_length: Maximum length of logged content.
+        redact_patterns: Enable pattern-based redaction.
+
+    Returns:
+        RequestResponseLogger instance.
+    """
+    global _request_logger
+    if _request_logger is None:
+        _request_logger = RequestResponseLogger(
+            max_length=max_length,
+            redact_patterns=redact_patterns,
+        )
+    return _request_logger
+
+
 # Initialize with sensible defaults
 configure_logging()
