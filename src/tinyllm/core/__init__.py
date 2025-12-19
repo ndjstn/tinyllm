@@ -1,17 +1,25 @@
 """Core execution engine for TinyLLM."""
 
+from tinyllm.core.context import ExecutionContext
 from tinyllm.core.message import (
-    Message,
-    MessagePayload,
-    MessageMetadata,
-    ToolCall,
-    ToolResult,
     ErrorInfo,
+    Message,
+    MessageMetadata,
+    MessagePayload,
     TaskPayload,
     TaskResponse,
+    ToolCall,
+    ToolResult,
 )
+from tinyllm.core.node import BaseNode, NodeConfig, NodeResult, NodeStats
+from tinyllm.core.registry import NodeRegistry
+from tinyllm.core.graph import Graph, Edge, ValidationError
+from tinyllm.core.builder import GraphBuilder, load_graph
+from tinyllm.core.executor import Executor, ExecutorConfig, ExecutionError
+from tinyllm.core.trace import ExecutionTrace, NodeExecution, TraceRecorder
 
 __all__ = [
+    # Message types
     "Message",
     "MessagePayload",
     "MessageMetadata",
@@ -20,4 +28,25 @@ __all__ = [
     "ErrorInfo",
     "TaskPayload",
     "TaskResponse",
+    # Node types
+    "BaseNode",
+    "NodeConfig",
+    "NodeResult",
+    "NodeStats",
+    "NodeRegistry",
+    # Graph
+    "Graph",
+    "Edge",
+    "ValidationError",
+    "GraphBuilder",
+    "load_graph",
+    # Execution
+    "Executor",
+    "ExecutorConfig",
+    "ExecutionError",
+    "ExecutionContext",
+    # Tracing
+    "ExecutionTrace",
+    "NodeExecution",
+    "TraceRecorder",
 ]
