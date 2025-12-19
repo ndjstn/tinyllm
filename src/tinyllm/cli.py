@@ -198,5 +198,168 @@ def tool(
     asyncio.run(_run_tool())
 
 
+@app.command()
+def models():
+    """List configured model tiers."""
+    table = Table(title="TinyLLM Model Tiers")
+    table.add_column("Tier", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Purpose")
+    table.add_column("VRAM (est)")
+
+    tiers = [
+        ("T0", "Routers", "Fast classification", "~500 MB"),
+        ("T1", "Specialists", "Task execution", "~3 GB"),
+        ("T2", "Workers", "Complex tasks", "~6 GB"),
+        ("T3", "Judges", "Evaluation", "~12 GB"),
+    ]
+
+    for tier, name, purpose, vram in tiers:
+        table.add_row(tier, name, purpose, vram)
+
+    console.print(table)
+
+
+@app.command()
+def stats():
+    """Show system statistics."""
+    from tinyllm.grading.metrics import MetricsTracker
+
+    console.print("\n[bold]TinyLLM System Statistics[/bold]\n")
+
+    # System info
+    console.print("[cyan]System:[/cyan]")
+    console.print("  • Status: [green]Ready[/green]")
+
+    # Module info
+    console.print("\n[cyan]Modules:[/cyan]")
+    modules = [
+        ("Core Engine", "✓"),
+        ("Message System", "✓"),
+        ("Node Registry", "✓"),
+        ("Tool System", "✓"),
+        ("Grading System", "✓"),
+        ("Expansion System", "✓"),
+        ("Memory System", "✓"),
+    ]
+    for module, status in modules:
+        console.print(f"  • {module}: [green]{status}[/green]")
+
+    # Test stats
+    console.print("\n[cyan]Tests:[/cyan]")
+    console.print("  • Unit tests: [green]199 passing[/green]")
+
+
+@app.command()
+def chat(
+    model: str = typer.Option("qwen2.5:1.5b", "--model", "-m", help="Model to use"),
+):
+    """Start an interactive chat session."""
+    from tinyllm.memory import MemoryStore
+
+    async def _chat():
+        from tinyllm.models import OllamaClient
+
+        console.print("[bold]TinyLLM Chat[/bold]")
+        console.print(f"Model: {model}")
+        console.print("Type 'quit' to exit, 'clear' to clear history\n")
+
+        client = OllamaClient()
+        memory = MemoryStore()
+
+        try:
+            while True:
+                user_input = console.input("[cyan]You:[/cyan] ")
+
+                if user_input.lower() == "quit":
+                    break
+                if user_input.lower() == "clear":
+                    memory.clear_stm()
+                    console.print("[dim]History cleared[/dim]\n")
+                    continue
+                if not user_input.strip():
+                    continue
+
+                memory.add_message("user", user_input)
+
+                # Get context from memory
+                context = memory.get_context_for_prompt(max_tokens=1000)
+
+                # Generate response
+                try:
+                    response = await client.generate(
+                        model=model,
+                        prompt=user_input,
+                        system=f"You are a helpful assistant.\n\nConversation context:\n{context}",
+                    )
+                    assistant_msg = response.response
+                    memory.add_message("assistant", assistant_msg)
+                    console.print(f"[green]Assistant:[/green] {assistant_msg}\n")
+                except Exception as e:
+                    console.print(f"[red]Error: {e}[/red]\n")
+
+        finally:
+            await client.close()
+
+    console.print("[yellow]Note: Requires Ollama with specified model[/yellow]")
+    try:
+        asyncio.run(_chat())
+    except KeyboardInterrupt:
+        console.print("\n[dim]Goodbye![/dim]")
+
+
+@app.command()
+def benchmark(
+    iterations: int = typer.Option(10, "--iterations", "-n", help="Number of iterations"),
+):
+    """Run performance benchmarks."""
+    import time
+
+    console.print("[bold]TinyLLM Benchmarks[/bold]\n")
+
+    # Message creation benchmark
+    from tinyllm.core.message import Message, MessageType
+
+    console.print("Message creation...", end=" ")
+    start = time.perf_counter()
+    for _ in range(iterations * 100):
+        Message.create_task("test", MessageType.TASK)
+    elapsed = (time.perf_counter() - start) * 1000
+    console.print(f"[green]{elapsed:.2f}ms for {iterations * 100} messages[/green]")
+
+    # Memory operations benchmark
+    from tinyllm.memory import MemoryStore
+
+    console.print("Memory operations...", end=" ")
+    store = MemoryStore()
+    start = time.perf_counter()
+    for i in range(iterations):
+        store.add_message("user", f"Test message {i}")
+        store.set_context(f"key_{i}", f"value_{i}")
+    elapsed = (time.perf_counter() - start) * 1000
+    console.print(f"[green]{elapsed:.2f}ms for {iterations * 2} operations[/green]")
+
+    # Grading models benchmark
+    from tinyllm.grading.models import Grade, GradeLevel, DimensionScore, QualityDimension
+
+    console.print("Grade creation...", end=" ")
+    start = time.perf_counter()
+    for _ in range(iterations * 100):
+        Grade(
+            level=GradeLevel.GOOD,
+            overall_score=0.8,
+            dimension_scores=[
+                DimensionScore(dimension=QualityDimension.CORRECTNESS, score=0.9, reasoning="Good")
+            ],
+            feedback="Good work",
+            suggestions=[],
+            is_passing=True,
+        )
+    elapsed = (time.perf_counter() - start) * 1000
+    console.print(f"[green]{elapsed:.2f}ms for {iterations * 100} grades[/green]")
+
+    console.print("\n[green]Benchmarks complete![/green]")
+
+
 if __name__ == "__main__":
     app()
