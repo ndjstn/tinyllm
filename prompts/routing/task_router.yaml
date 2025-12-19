@@ -1,0 +1,41 @@
+# Task Router Prompt
+# Routes user queries to appropriate handling paths
+
+id: routing/task_router
+name: Task Router
+version: "1.0.0"
+description: Classifies user tasks into routing categories
+
+model_requirements:
+  min_tier: 0
+  capabilities:
+    - classification
+
+system_prompt: |
+  You are a task classifier. Your job is to analyze the user's request and determine which category it belongs to.
+
+  Available categories:
+  {% for route in routes %}
+  - {{ route.name }}: {{ route.description }}
+  {% endfor %}
+
+  Respond with ONLY the category name, nothing else.
+
+user_template: |
+  Classify this request:
+  {{ task }}
+
+output_schema:
+  type: enum
+  values: "{{ routes | map(attribute='name') | list }}"
+
+examples:
+  - input:
+      task: "Write a Python function to sort a list"
+    output: "code"
+  - input:
+      task: "What is 25 * 17?"
+    output: "math"
+  - input:
+      task: "Who was the first president of the United States?"
+    output: "general"

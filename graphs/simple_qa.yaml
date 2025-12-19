@@ -1,0 +1,71 @@
+# Simple Q&A Graph
+# A minimal graph demonstrating entry -> router -> model -> exit flow
+
+id: graph.simple_qa
+version: "1.0.0"
+name: Simple Q&A
+description: Basic question answering with task routing
+
+nodes:
+  - id: entry.main
+    type: entry
+    name: Main Entry
+    config:
+      required_fields: []
+
+  - id: router.task
+    type: router
+    name: Task Router
+    config:
+      model: qwen2.5:0.5b
+      prompt_id: routing/task_router
+      routes:
+        - name: code
+          description: Code generation, debugging, or programming questions
+          target: exit.success
+        - name: math
+          description: Mathematical calculations or reasoning
+          target: exit.success
+        - name: general
+          description: General knowledge questions
+          target: exit.success
+        - name: unknown
+          description: Cannot determine task type
+          target: exit.fallback
+
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    config:
+      status: success
+
+  - id: exit.fallback
+    type: exit
+    name: Fallback Exit
+    config:
+      status: fallback
+
+edges:
+  - from_node: entry.main
+    to_node: router.task
+    weight: 1.0
+
+  - from_node: router.task
+    to_node: exit.success
+    condition: "route in ['code', 'math', 'general']"
+
+  - from_node: router.task
+    to_node: exit.fallback
+    condition: "route == 'unknown'"
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+  - exit.fallback
+
+protected:
+  - entry.main
+  - exit.success
+  - exit.fallback

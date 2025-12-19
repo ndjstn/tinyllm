@@ -30,12 +30,16 @@ class PromptLoader:
         "memory": "memory",
     }
 
-    def __init__(self, prompts_dir: Path | str):
+    def __init__(self, prompts_dir: Optional[Path | str] = None):
         """Initialize prompt loader.
 
         Args:
             prompts_dir: Root directory containing prompt YAML files.
+                         Defaults to 'prompts' in the project root.
         """
+        if prompts_dir is None:
+            # Default to prompts/ in the project root
+            prompts_dir = Path(__file__).parent.parent.parent.parent / "prompts"
         self.prompts_dir = Path(prompts_dir)
         self._cache: Dict[str, PromptDefinition] = {}
 

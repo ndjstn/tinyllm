@@ -84,10 +84,18 @@ class MessagePayload(BaseModel):
     tool_result: Optional[ToolResult] = Field(
         default=None, description="Tool call result"
     )
+    tool_calls: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Multiple tool call results"
+    )
 
     # Error info
     error: Optional[ErrorInfo] = Field(
         default=None, description="Error information if failed"
+    )
+
+    # Extensible metadata
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata for routing/processing"
     )
 
 

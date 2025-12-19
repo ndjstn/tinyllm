@@ -1,0 +1,157 @@
+# Multi-Domain Router Graph
+# Demonstrates multi-dimensional routing for cross-domain queries
+
+id: graph.multi_domain
+version: "1.0.0"
+name: Multi-Domain Router
+description: |
+  Routes queries that may span multiple domains.
+  Examples:
+  - "Write Python code to calculate compound interest" → code + math
+  - "Explain the algorithm behind neural networks" → code + general
+  - "Create a regex to validate email addresses" → code
+
+nodes:
+  - id: entry.main
+    type: entry
+    name: Main Entry
+
+  - id: router.multi
+    type: router
+    name: Multi-Domain Router
+    config:
+      model: qwen2.5:0.5b
+      multi_label: true
+      max_labels: 3
+      fanout_enabled: false  # Use compound routes instead
+      routes:
+        - name: code
+          description: Code generation, debugging, programming, algorithms
+          target: model.code
+          priority: 2
+          domains: [code, programming, algorithms]
+        - name: math
+          description: Mathematical calculations, formulas, statistics
+          target: model.math
+          priority: 1
+          domains: [math, calculation, statistics]
+        - name: general
+          description: General knowledge, explanations, concepts
+          target: model.general
+          priority: 0
+          domains: [general, knowledge, explanation]
+      compound_routes:
+        - domains: [code, math]
+          target: model.code_math
+          priority: 10
+        - domains: [code, general]
+          target: model.code_explain
+          priority: 5
+      default_route: general
+
+  # Specialist nodes
+  - id: model.code
+    type: model
+    name: Code Specialist
+    config:
+      model: qwen2.5:3b
+      system_prompt: |
+        You are a coding expert. Write clean, efficient, well-documented code.
+        Include comments explaining your approach.
+
+  - id: model.math
+    type: model
+    name: Math Specialist
+    config:
+      model: qwen2.5:3b
+      system_prompt: |
+        You are a mathematics expert. Solve problems step by step.
+        Show your work and explain each step clearly.
+
+  - id: model.general
+    type: model
+    name: General Assistant
+    config:
+      model: qwen2.5:3b
+      system_prompt: |
+        You are a helpful assistant. Provide clear, accurate, and concise responses.
+
+  - id: model.code_math
+    type: model
+    name: Code + Math Specialist
+    config:
+      model: qwen2.5:3b
+      system_prompt: |
+        You are an expert in computational mathematics and numerical programming.
+        When writing code for mathematical problems:
+        1. First explain the mathematical concept
+        2. Then implement it in clean, efficient code
+        3. Include test cases to verify correctness
+
+  - id: model.code_explain
+    type: model
+    name: Code Explainer
+    config:
+      model: qwen2.5:3b
+      system_prompt: |
+        You are an expert at explaining technical concepts and code.
+        Break down complex topics into understandable parts.
+        Use analogies and examples to illustrate concepts.
+
+  - id: exit.success
+    type: exit
+    name: Success Exit
+    config:
+      status: success
+
+edges:
+  # Entry to router
+  - from_node: entry.main
+    to_node: router.multi
+
+  # Router to specialists (determined by router logic)
+  - from_node: router.multi
+    to_node: model.code
+    condition: "route == 'code'"
+
+  - from_node: router.multi
+    to_node: model.math
+    condition: "route == 'math'"
+
+  - from_node: router.multi
+    to_node: model.general
+    condition: "route == 'general'"
+
+  - from_node: router.multi
+    to_node: model.code_math
+    condition: "compound_route and 'code' in routes and 'math' in routes"
+
+  - from_node: router.multi
+    to_node: model.code_explain
+    condition: "compound_route and 'code' in routes and 'general' in routes"
+
+  # All specialists to exit
+  - from_node: model.code
+    to_node: exit.success
+
+  - from_node: model.math
+    to_node: exit.success
+
+  - from_node: model.general
+    to_node: exit.success
+
+  - from_node: model.code_math
+    to_node: exit.success
+
+  - from_node: model.code_explain
+    to_node: exit.success
+
+entry_points:
+  - entry.main
+
+exit_points:
+  - exit.success
+
+protected:
+  - entry.main
+  - exit.success
