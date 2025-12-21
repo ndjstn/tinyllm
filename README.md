@@ -79,16 +79,31 @@ docker-compose exec tinyllm tinyllm run "What is 2+2?"
 
 See [DOCKER_QUICKSTART.md](DOCKER_QUICKSTART.md) for details or [DOCKER.md](DOCKER.md) for full documentation.
 
-### Local Installation
+### Local Installation (100% Offline After Setup)
 
-### Prerequisites
+> **🏠 Local-First Philosophy**: TinyLLM runs entirely on your machine. No cloud APIs, no data tracking, no internet required after setup.
 
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) package manager
-- [Ollama](https://ollama.ai) installed and running
-- At least one small model: `ollama pull qwen2.5:3b`
+#### Prerequisites
 
-### Installation
+- **Python 3.11+**: Modern Python runtime
+- **[Ollama](https://ollama.ai)**: Local LLM inference engine (core dependency)
+- **[uv](https://github.com/astral-sh/uv)**: Fast Python package manager
+- **Hardware**: 16GB RAM recommended, 8GB+ VRAM optional for GPU acceleration
+
+#### Step 1: Install Ollama (Required First)
+
+Ollama is the only external dependency - it runs models locally on your machine.
+
+```bash
+# Download and install from https://ollama.ai/download
+# - macOS: Download .dmg installer
+# - Linux: curl -fsSL https://ollama.com/install.sh | sh
+# - Windows: Download installer
+
+# No account or API keys needed!
+```
+
+#### Step 2: Clone & Install Dependencies
 
 ```bash
 # Clone the repository
@@ -98,14 +113,38 @@ cd tinyllm
 # Install dependencies with uv
 uv sync --dev
 
-# Pull recommended models
-ollama pull qwen2.5:0.5b   # Router (tiny, fast)
-ollama pull qwen2.5:3b     # General specialist
-ollama pull granite-code:3b # Code specialist
-
-# Verify installation
-uv run tinyllm doctor
+# Or install with optional tool extras
+# uv sync --dev --extras data      # CSV/JSON processing
+# uv sync --dev --extras all-tools # All optional tools
 ```
+
+#### Step 3: Pull Local Models
+
+```bash
+# Router model (fast, lightweight decisions)
+ollama pull qwen2.5:0.5b     # 500MB - routes queries to specialists
+
+# General specialist (main workhorse)
+ollama pull qwen2.5:3b       # 1.9GB - handles most queries
+
+# Code specialist (optional but recommended)
+ollama pull granite-code:3b  # 1.9GB - code-specific tasks
+
+# Verify models are ready
+ollama list
+```
+
+#### Step 4: Verify Installation
+
+```bash
+# Run health check
+uv run tinyllm doctor
+
+# Test with a simple query
+uv run tinyllm run "What is 2 + 2?"
+```
+
+**✅ You're done!** TinyLLM now runs 100% offline. No internet needed for daily use.
 
 ### First Run
 
