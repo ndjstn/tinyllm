@@ -1,0 +1,140 @@
+site_name: TinyLLM
+site_description: Small LLMs as intelligent neurons in a larger cognitive architecture
+site_url: https://ndjstn.github.io/tinyllm/
+repo_url: https://github.com/ndjstn/tinyllm
+repo_name: ndjstn/tinyllm
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            group_by_category: true
+            show_category_heading: true
+            show_if_no_docstring: false
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - meta
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: README.md
+      - Development Setup: DEVELOPMENT.md
+      - Quick Start: getting-started.md
+  - Architecture:
+      - Overview: ARCHITECTURE.md
+      - Specifications:
+          - Graphs: specs/graphs.md
+          - Nodes: specs/nodes.md
+          - Messages: specs/messages.md
+  - Features:
+      - Caching: cache.md
+      - Checkpointing: CHECKPOINTING.md
+      - Completion Detection: completion_detection.md
+      - Fallback Strategies: FALLBACK_STRATEGIES.md
+      - Identity System: identity-system.md
+      - Logging: logging.md
+      - Metrics: metrics.md
+      - Loop Nodes: loop_node_usage.md
+  - Development:
+      - Contributing: CONTRIBUTING.md
+      - Roadmap: ROADMAP_500.md
+      - Testing: TESTING.md
+  - API Reference:
+      - Core: api/core.md
+      - Models: api/models.md
+      - Nodes: api/nodes.md
+      - Tools: api/tools.md
+      - Config: api/config.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ndjstn/tinyllm
+      name: TinyLLM on GitHub
+  version:
+    provider: mike
+    default: stable
+
+extra_css:
+  - stylesheets/extra.css
+
+copyright: Copyright &copy; 2025 TinyLLM Contributors
