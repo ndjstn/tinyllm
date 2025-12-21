@@ -82,6 +82,38 @@ docs = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.25.0",
 ]
+# Data processing tools
+data = [
+    "pandas>=2.0.0",
+    "jsonpath-ng>=1.6.0",
+    "jsonschema>=4.20.0",
+]
+# AI/ML integration tools
+aiml = [
+    "openai>=1.0.0",
+    "sentence-transformers>=2.2.0",
+    "pinecone-client>=3.0.0",
+    "weaviate-client>=4.0.0",
+    "huggingface-hub>=0.20.0",
+]
+# Observability tools
+observability = [
+    "prometheus-api-client>=0.5.0",
+    "datadog>=0.44.0",
+    "elasticsearch>=8.0.0",
+]
+# Document processing tools
+documents = [
+    "pypdf>=3.0.0",
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "openpyxl>=3.1.0",
+    "python-docx>=1.0.0",
+]
+# All extra tools
+all-tools = [
+    "tinyllm[data,aiml,observability,documents]",
+]
 
 [project.scripts]
 tinyllm = "tinyllm.cli:app"
