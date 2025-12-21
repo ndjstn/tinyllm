@@ -24,7 +24,9 @@ class ToolMetadata(BaseModel):
     name: str
     description: str
     version: str = "1.0.0"
-    category: str = Field(pattern=r"^(computation|execution|search|memory|utility)$")
+    category: str = Field(
+        pattern=r"^(computation|execution|search|memory|utility|data|aiml|observability|document)$"
+    )
     sandbox_required: bool = False
 
 
