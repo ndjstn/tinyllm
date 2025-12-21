@@ -115,6 +115,19 @@ class TestExecutionContextProperties:
         assert isinstance(context.messages, list)
 
 
+@pytest.fixture(autouse=True)
+def metrics_collector(isolated_metrics_collector: MetricsCollector) -> MetricsCollector:
+    """Provide a fresh metrics collector for each test.
+
+    Uses the isolated_metrics_collector fixture from conftest to ensure
+    clean state between tests.
+
+    This fixture is autouse to ensure ALL tests in this module get
+    isolated metrics, preventing state pollution between tests.
+    """
+    return isolated_metrics_collector
+
+
 class TestMetricsCollectorProperties:
     """Property-based tests for MetricsCollector."""
 
