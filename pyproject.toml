@@ -241,3 +241,9 @@ dev = [
     "pytest-cov>=7.0.0",
     "syrupy>=4.6.0",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests", "scripts", "benchmarks", ".venv", "build", "dist"]
+skips = ["B101"]  # Skip assert_used (used extensively in tests, handled by test exclusion)
+# Security baseline: Level LOW and confidence LOW (-ll flag in pre-commit)
+# This catches high/medium severity issues while reducing noise
