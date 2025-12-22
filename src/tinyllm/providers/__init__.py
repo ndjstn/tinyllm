@@ -198,6 +198,20 @@ from tinyllm.providers.custom_client import (
     close_all_custom_clients,
 )
 
+# Model proxy/gateway imports
+from tinyllm.providers.model_proxy import (
+    ModelProxy,
+    ModelProxyConfig,
+    RoutingStrategyType,
+    BackendState,
+    RoutingStrategy,
+    RoundRobinStrategy,
+    RandomStrategy,
+    LeastLoadedStrategy,
+    HealthBasedStrategy,
+    PriorityStrategy,
+)
+
 __all__ = [
     # OpenAI
     "OpenAIClient",
@@ -371,4 +385,15 @@ __all__ = [
     "ResponseExtractor",
     "get_shared_custom_client",
     "close_all_custom_clients",
+    # Model Proxy/Gateway
+    "ModelProxy",
+    "ModelProxyConfig",
+    "RoutingStrategyType",
+    "BackendState",
+    "RoutingStrategy",
+    "RoundRobinStrategy",
+    "RandomStrategy",
+    "LeastLoadedStrategy",
+    "HealthBasedStrategy",
+    "PriorityStrategy",
 ]
