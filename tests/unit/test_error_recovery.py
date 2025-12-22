@@ -64,6 +64,16 @@ def executor_config():
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_metrics(isolated_metrics_collector):
+    """Ensure metrics isolation for all tests in this file.
+
+    Prevents metrics state pollution between tests by using the
+    isolated_metrics_collector fixture from conftest.
+    """
+    return isolated_metrics_collector
+
+
 # ============================================================================
 # Task 6: Graceful Degradation Modes
 # ============================================================================

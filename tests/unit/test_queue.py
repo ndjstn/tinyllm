@@ -78,6 +78,16 @@ def executor(simple_graph):
     return Executor(simple_graph, config=config)
 
 
+@pytest.fixture(autouse=True)
+def isolated_metrics(isolated_metrics_collector):
+    """Ensure metrics isolation for all tests in this file.
+
+    Prevents metrics state pollution between tests by using the
+    isolated_metrics_collector fixture from conftest.
+    """
+    return isolated_metrics_collector
+
+
 class TestPriority:
     """Test priority ordering."""
 
