@@ -1,6 +1,12 @@
 """Ollama model integration."""
 
-from tinyllm.models.client import OllamaClient, get_shared_client, close_all_clients
+from tinyllm.models.client import (
+    OllamaClient,
+    get_shared_client,
+    close_all_clients,
+    EmbedRequest,
+    EmbedResponse,
+)
 from tinyllm.models.fallback import (
     FallbackClient,
     FallbackConfig,
@@ -20,6 +26,8 @@ __all__ = [
     "OllamaClient",
     "get_shared_client",
     "close_all_clients",
+    "EmbedRequest",
+    "EmbedResponse",
     "FallbackClient",
     "FallbackConfig",
     "FallbackResult",

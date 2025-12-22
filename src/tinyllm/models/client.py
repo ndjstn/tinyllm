@@ -199,6 +199,21 @@ class GenerateResponse(BaseModel):
     eval_duration: Optional[int] = None
 
 
+class EmbedRequest(BaseModel):
+    """Request for Ollama embeddings endpoint."""
+
+    model: str
+    prompt: str | list[str]  # Can be single string or batch
+    options: Optional[dict[str, Any]] = None
+    keep_alive: Optional[str] = None
+
+
+class EmbedResponse(BaseModel):
+    """Response from Ollama embeddings endpoint."""
+
+    embedding: list[float] | list[list[float]]  # Single or batch embeddings
+
+
 class OllamaClient:
     """Async client for Ollama API with connection pooling, rate limiting, and circuit breaker."""
 
@@ -551,6 +566,95 @@ class OllamaClient:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 pass  # Consume stream
+
+    async def embed(
+        self,
+        model: str,
+        prompt: str | list[str],
+        options: Optional[dict[str, Any]] = None,
+    ) -> EmbedResponse:
+        """Generate embeddings for text(s).
+
+        Args:
+            model: Embedding model (e.g., "nomic-embed-text").
+            prompt: Single text or list of texts to embed.
+            options: Optional Ollama options (temperature, etc.).
+
+        Returns:
+            EmbedResponse with embeddings.
+        """
+        await self._rate_limiter.acquire()
+
+        request = EmbedRequest(
+            model=model,
+            prompt=prompt,
+            options=options,
+        )
+
+        start_time = time.monotonic()
+
+        async def _do_embed() -> EmbedResponse:
+            client = await self._get_client()
+
+            for attempt in range(self.max_retries + 1):
+                try:
+                    logger.debug(
+                        "embed_request",
+                        model=model,
+                        is_batch=isinstance(prompt, list),
+                        attempt=attempt + 1,
+                    )
+
+                    response = await client.post(
+                        "/api/embeddings",
+                        json=request.model_dump(exclude_none=True),
+                    )
+                    response.raise_for_status()
+
+                    data = response.json()
+                    embed_response = EmbedResponse(**data)
+
+                    duration_ms = (time.monotonic() - start_time) * 1000
+                    logger.info(
+                        "embed_success",
+                        model=model,
+                        is_batch=isinstance(prompt, list),
+                        duration_ms=duration_ms,
+                    )
+
+                    self._request_count += 1
+
+                    return embed_response
+
+                except httpx.HTTPError as e:
+                    if attempt == self.max_retries:
+                        logger.error(
+                            "embed_failed",
+                            model=model,
+                            attempt=attempt + 1,
+                            error=str(e),
+                        )
+                        error_type = type(e).__name__
+                        metrics.increment_error_count(
+                            error_type=error_type,
+                            model=model,
+                            graph=self._current_graph,
+                        )
+                        raise
+
+                    backoff = 2 ** attempt
+                    logger.warning(
+                        "embed_retry",
+                        model=model,
+                        attempt=attempt + 1,
+                        backoff=backoff,
+                        error=str(e),
+                    )
+                    await asyncio.sleep(backoff)
+
+            raise RuntimeError("Unreachable")
+
+        return await self._circuit_breaker.call(_do_embed)
 
     async def check_health(self) -> bool:
         """Check if Ollama is healthy.
