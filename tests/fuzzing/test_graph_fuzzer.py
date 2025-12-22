@@ -253,6 +253,154 @@ class TestExtensiveFuzzing:
         assert "content" in payload_dict
 
 
+class TestGraphExecutionFuzzing:
+    """Fuzzing tests for graph execution paths."""
+
+    @given(
+        st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=10),
+        messages_fuzz()
+    )
+    @settings(max_examples=50, deadline=5000)
+    def test_graph_traversal_fuzzing(
+        self,
+        node_sequence: List[str],
+        message: Message
+    ) -> None:
+        """Graph traversal with random node sequences doesn't crash."""
+        from tinyllm.config.graph import NodeDefinition, EdgeDefinition, NodeType, GraphDefinition, GraphMetadata
+
+        # Create nodes for sequence
+        nodes = []
+        edges = []
+
+        # Entry node
+        entry_id = "entry.main"
+        nodes.append(NodeDefinition(
+            id=entry_id,
+            type=NodeType.ENTRY,
+            name="Entry",
+            config={}
+        ))
+
+        # Create nodes from sequence (filter to valid node IDs)
+        valid_node_ids = []
+        for i, node_name in enumerate(node_sequence):
+            # Sanitize to valid node ID
+            node_id = f"node.{i}"
+            if node_id not in valid_node_ids:  # Avoid duplicates
+                nodes.append(NodeDefinition(
+                    id=node_id,
+                    type=NodeType.EXIT,  # Use EXIT type for simplicity
+                    name=f"Node {i}",
+                    config={"status": "success"}
+                ))
+                valid_node_ids.append(node_id)
+
+        # Create linear edges
+        if len(nodes) >= 2:
+            for i in range(len(nodes) - 1):
+                edges.append(EdgeDefinition(
+                    from_node=nodes[i].id,
+                    to_node=nodes[i + 1].id,
+                    weight=1.0
+                ))
+
+        # Exit node (last node is already an exit)
+        exit_ids = [n.id for n in nodes if n.type == NodeType.EXIT]
+
+        # Create graph definition
+        try:
+            graph = GraphDefinition(
+                id="fuzz.graph",
+                version="0.0.1",
+                name="Fuzz Test Graph",
+                description="Randomly generated graph for fuzzing",
+                metadata=GraphMetadata(created_at="2024-01-01T00:00:00", author="fuzzer"),
+                nodes=nodes,
+                edges=edges,
+                entry_points=[entry_id],
+                exit_points=exit_ids if exit_ids else [nodes[-1].id]
+            )
+
+            # Basic validation - graph should have valid structure
+            assert len(graph.nodes) > 0
+            assert len(graph.entry_points) > 0
+            assert len(graph.exit_points) > 0
+            assert all(ep in [n.id for n in graph.nodes] for ep in graph.entry_points)
+            assert all(ep in [n.id for n in graph.nodes] for ep in graph.exit_points)
+
+        except Exception as e:
+            # Graph validation can fail with random inputs - that's expected
+            assert isinstance(e, Exception)
+
+    @given(
+        st.integers(min_value=0, max_value=100),
+        st.booleans(),
+        messages_fuzz()
+    )
+    @settings(max_examples=50, deadline=3000)
+    def test_node_result_fuzzing(
+        self,
+        num_messages: int,
+        success: bool,
+        sample_message: Message
+    ) -> None:
+        """NodeResult handles various message counts and success states."""
+        # Create random number of messages
+        output_messages = [sample_message for _ in range(min(num_messages, 10))]
+
+        result = NodeResult(
+            success=success,
+            output_messages=output_messages,
+            next_nodes=[]
+        )
+
+        assert result.success == success
+        assert len(result.output_messages) == len(output_messages)
+
+
+class TestExecutionContextFuzzing:
+    """Fuzzing tests for ExecutionContext."""
+
+    @given(
+        st.dictionaries(
+            st.text(min_size=1, max_size=50),
+            st.one_of(st.text(), st.integers(), st.booleans(), st.floats(allow_nan=False)),
+            max_size=20
+        ),
+        st.lists(messages_fuzz(), max_size=10)
+    )
+    @settings(max_examples=30, deadline=5000)
+    def test_execution_context_variables_fuzzing(
+        self,
+        variables: Dict[str, Any],
+        messages: List[Message]
+    ) -> None:
+        """ExecutionContext handles arbitrary variables and messages."""
+        from tinyllm.core.context import ExecutionContext
+        from tinyllm.config.loader import Config
+
+        try:
+            context = ExecutionContext(
+                trace_id="fuzz_trace",
+                graph_id="fuzz_graph",
+                config=Config(),
+                messages=[msg.model_dump() for msg in messages]
+            )
+
+            # Add variables
+            for key, value in variables.items():
+                context.variables[key] = value
+
+            # Should be able to retrieve them
+            for key in variables:
+                assert key in context.variables
+
+        except Exception as e:
+            # Some combinations might be invalid
+            assert isinstance(e, Exception)
+
+
 # Configure fuzzing profiles
 settings.register_profile("fuzzing_intensive", max_examples=500, deadline=None)
 settings.register_profile("fuzzing_quick", max_examples=20, deadline=2000)

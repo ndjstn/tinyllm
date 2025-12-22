@@ -1,0 +1,390 @@
+# serializer version: 1
+# name: TestConfigurationSnapshots.test_error_category_enum_snapshot
+  dict({
+    'authentication': 'AUTHENTICATION',
+    'configuration': 'CONFIGURATION',
+    'data': 'DATA',
+    'execution': 'EXECUTION',
+    'internal': 'INTERNAL',
+    'model': 'MODEL',
+    'network': 'NETWORK',
+    'permission': 'PERMISSION',
+    'resource': 'RESOURCE',
+    'timeout': 'TIMEOUT',
+    'unknown': 'UNKNOWN',
+    'validation': 'VALIDATION',
+  })
+# ---
+# name: TestConfigurationSnapshots.test_error_severity_enum_snapshot
+  dict({
+    'critical': 'CRITICAL',
+    'debug': 'DEBUG',
+    'error': 'ERROR',
+    'fatal': 'FATAL',
+    'info': 'INFO',
+    'warning': 'WARNING',
+  })
+# ---
+# name: TestConfigurationSnapshots.test_node_type_enum_snapshot
+  dict({
+    'dynamic_fanout': 'FANOUT',
+    'entry': 'ENTRY',
+    'exit': 'EXIT',
+    'gate': 'GATE',
+    'loop': 'LOOP',
+    'model': 'MODEL',
+    'reasoning': 'REASONING',
+    'router': 'ROUTER',
+    'timeout': 'TIMEOUT',
+    'tool': 'TOOL',
+    'transform': 'TRANSFORM',
+  })
+# ---
+# name: TestErrorSnapshots.test_error_signature_snapshot
+  dict({
+    'category': <ErrorCategory.VALIDATION: 'validation'>,
+    'exception_type': 'ValueError',
+    'graph_id': 'graph.test',
+    'message_pattern': 'Connection timeout after <ID> milliseconds',
+    'node_id': 'model.specialist',
+    'signature_hash': 'a54f9d3e7b3ca526',
+  })
+# ---
+# name: TestErrorSnapshots.test_normalized_message_patterns_snapshot
+  dict({
+    'Connection timeout after 5000 milliseconds': 'Connection timeout after <ID> milliseconds',
+    'Error at 2024-01-15 10:30:45': 'Error at <ID>-01-15 10:<PORT>:<PORT>',
+    'Failed to connect to 192.168.1.1:3306': 'Failed to connect to <IP>:<ID>',
+    'File not found: /var/log/app/file1234.txt': 'File not found: <PATH>',
+    'Request 550e8400-e29b-41d4-a716-446655440000 failed': 'Request <UUID> failed',
+    'Server listening on :8080': 'Server listening on :<ID>',
+  })
+# ---
+# name: TestGraphDefinitionSnapshots.test_router_graph_snapshot
+  dict({
+    'allow_cycles': False,
+    'description': 'Router with code and math specialists',
+    'edges': list([
+      dict({
+        'condition': None,
+        'from_node': 'entry.main',
+        'to_node': 'router.main',
+        'weight': 1.0,
+      }),
+      dict({
+        'condition': "route == 'code'",
+        'from_node': 'router.main',
+        'to_node': 'model.code',
+        'weight': 1.0,
+      }),
+      dict({
+        'condition': "route == 'math'",
+        'from_node': 'router.main',
+        'to_node': 'model.math',
+        'weight': 1.0,
+      }),
+      dict({
+        'condition': None,
+        'from_node': 'model.code',
+        'to_node': 'exit.success',
+        'weight': 1.0,
+      }),
+      dict({
+        'condition': None,
+        'from_node': 'model.math',
+        'to_node': 'exit.success',
+        'weight': 1.0,
+      }),
+    ]),
+    'entry_points': list([
+      'entry.main',
+    ]),
+    'exit_points': list([
+      'exit.success',
+    ]),
+    'id': 'graph.router',
+    'metadata': dict({
+      'author': 'test',
+      'created_at': '2024-01-01T00:00:00',
+      'description': None,
+      'tags': list([
+      ]),
+    }),
+    'name': 'Router Graph',
+    'nodes': list([
+      dict({
+        'config': dict({
+        }),
+        'description': None,
+        'id': 'entry.main',
+        'name': 'Main Entry',
+        'type': <NodeType.ENTRY: 'entry'>,
+      }),
+      dict({
+        'config': dict({
+          'model': 'qwen2.5:0.5b',
+          'routes': list([
+            dict({
+              'description': 'Code-related tasks',
+              'name': 'code',
+              'target': 'model.code',
+            }),
+            dict({
+              'description': 'Math tasks',
+              'name': 'math',
+              'target': 'model.math',
+            }),
+          ]),
+        }),
+        'description': None,
+        'id': 'router.main',
+        'name': 'Main Router',
+        'type': <NodeType.ROUTER: 'router'>,
+      }),
+      dict({
+        'config': dict({
+          'model': 'granite-code:3b',
+        }),
+        'description': None,
+        'id': 'model.code',
+        'name': 'Code Specialist',
+        'type': <NodeType.MODEL: 'model'>,
+      }),
+      dict({
+        'config': dict({
+          'model': 'phi3:mini',
+        }),
+        'description': None,
+        'id': 'model.math',
+        'name': 'Math Specialist',
+        'type': <NodeType.MODEL: 'model'>,
+      }),
+      dict({
+        'config': dict({
+          'status': 'success',
+        }),
+        'description': None,
+        'id': 'exit.success',
+        'name': 'Success',
+        'type': <NodeType.EXIT: 'exit'>,
+      }),
+    ]),
+    'protected': list([
+    ]),
+    'version': '1.0.0',
+  })
+# ---
+# name: TestGraphDefinitionSnapshots.test_simple_graph_snapshot
+  dict({
+    'allow_cycles': False,
+    'description': 'Entry -> Model -> Exit',
+    'edges': list([
+      dict({
+        'condition': None,
+        'from_node': 'entry.main',
+        'to_node': 'model.qwen',
+        'weight': 1.0,
+      }),
+      dict({
+        'condition': None,
+        'from_node': 'model.qwen',
+        'to_node': 'exit.success',
+        'weight': 1.0,
+      }),
+    ]),
+    'entry_points': list([
+      'entry.main',
+    ]),
+    'exit_points': list([
+      'exit.success',
+    ]),
+    'id': 'graph.simple',
+    'metadata': dict({
+      'author': 'test',
+      'created_at': '2024-01-01T00:00:00',
+      'description': None,
+      'tags': list([
+        'test',
+        'simple',
+      ]),
+    }),
+    'name': 'Simple Linear Graph',
+    'nodes': list([
+      dict({
+        'config': dict({
+        }),
+        'description': None,
+        'id': 'entry.main',
+        'name': 'Main Entry',
+        'type': <NodeType.ENTRY: 'entry'>,
+      }),
+      dict({
+        'config': dict({
+          'model': 'qwen2.5:3b',
+        }),
+        'description': None,
+        'id': 'model.qwen',
+        'name': 'Qwen Model',
+        'type': <NodeType.MODEL: 'model'>,
+      }),
+      dict({
+        'config': dict({
+          'status': 'success',
+        }),
+        'description': None,
+        'id': 'exit.success',
+        'name': 'Success Exit',
+        'type': <NodeType.EXIT: 'exit'>,
+      }),
+    ]),
+    'protected': list([
+    ]),
+    'version': '1.0.0',
+  })
+# ---
+# name: TestMessageSnapshots.test_message_payload_snapshot
+  dict({
+    'confidence': None,
+    'content': 'Calculate the factorial of 5',
+    'error': None,
+    'metadata': dict({
+    }),
+    'route': None,
+    'structured': dict({
+      'expected_type': 'integer',
+      'operand': 5,
+      'operation': 'factorial',
+    }),
+    'task': 'math_calculation',
+    'tool_call': None,
+    'tool_calls': None,
+    'tool_result': None,
+  })
+# ---
+# name: TestMessageSnapshots.test_message_snapshot
+  dict({
+    'metadata': dict({
+      'is_cached': False,
+      'iteration': None,
+      'latency_ms': None,
+      'model_used': None,
+      'quality_score': None,
+      'retry_count': None,
+      'tokens_in': None,
+      'tokens_out': None,
+    }),
+    'parent_id': None,
+    'payload': dict({
+      'confidence': None,
+      'content': 'Write a function to sort a list',
+      'error': None,
+      'metadata': dict({
+      }),
+      'route': None,
+      'structured': None,
+      'task': 'code_generation',
+      'tool_call': None,
+      'tool_calls': None,
+      'tool_result': None,
+    }),
+    'source_node': 'router.main',
+    'target_node': 'model.code_specialist',
+    'trace_id': 'trace_123',
+  })
+# ---
+# name: TestMessageSnapshots.test_message_with_metadata_snapshot
+  dict({
+    'metadata': dict({
+      'is_cached': False,
+      'iteration': None,
+      'latency_ms': None,
+      'model_used': None,
+      'quality_score': None,
+      'retry_count': None,
+      'tokens_in': None,
+      'tokens_out': None,
+    }),
+    'parent_id': None,
+    'payload': dict({
+      'confidence': None,
+      'content': 'Summarize this text',
+      'error': None,
+      'metadata': dict({
+        'max_length': 100,
+        'priority': 'high',
+        'source': 'document',
+      }),
+      'route': None,
+      'structured': None,
+      'task': 'summarization',
+      'tool_call': None,
+      'tool_calls': None,
+      'tool_result': None,
+    }),
+    'source_node': 'entry.main',
+    'target_node': None,
+    'trace_id': 'trace_456',
+  })
+# ---
+# name: TestNodeResultSnapshots.test_failed_node_result_snapshot
+  dict({
+    'error': None,
+    'latency_ms': 0,
+    'metadata': dict({
+      'error': 'Model timeout',
+      'error_code': 'TIMEOUT',
+    }),
+    'next_nodes': list([
+      'exit.error',
+    ]),
+    'output_messages': list([
+    ]),
+    'success': False,
+  })
+# ---
+# name: TestNodeResultSnapshots.test_successful_node_result_snapshot
+  dict({
+    'error': None,
+    'latency_ms': 0,
+    'metadata': dict({
+      'execution_time_ms': 150,
+      'model': 'qwen2.5:3b',
+      'tokens_used': 25,
+    }),
+    'next_nodes': list([
+      'exit.success',
+    ]),
+    'output_messages': list([
+      dict({
+        'metadata': dict({
+          'is_cached': False,
+          'iteration': None,
+          'latency_ms': None,
+          'model_used': None,
+          'quality_score': None,
+          'retry_count': None,
+          'tokens_in': None,
+          'tokens_out': None,
+        }),
+        'parent_id': None,
+        'payload': dict({
+          'confidence': None,
+          'content': 'Result: 42',
+          'error': None,
+          'metadata': dict({
+          }),
+          'route': None,
+          'structured': None,
+          'task': None,
+          'tool_call': None,
+          'tool_calls': None,
+          'tool_result': None,
+        }),
+        'source_node': 'model.specialist',
+        'target_node': 'exit.success',
+        'trace_id': 'trace_789',
+      }),
+    ]),
+    'success': True,
+  })
+# ---

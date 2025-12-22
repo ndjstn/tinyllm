@@ -64,6 +64,9 @@ class ExecutorConfig(BaseModel):
     checkpoint_interval: int = Field(
         default=5, ge=1, description="Create checkpoint every N nodes"
     )
+    enable_transactions: bool = Field(
+        default=True, description="Enable transactional execution with rollback support"
+    )
 
 
 class ExecutionError(Exception):
@@ -107,6 +110,7 @@ class Executor:
         self._partial_results: List[NodeResult] = []
         self._checkpoints: List[Dict[str, Any]] = []
         self._last_checkpoint_step = 0
+        self._current_transaction: Optional[Transaction] = None
 
     async def execute(self, task: TaskPayload) -> TaskResponse:
         """Execute a task through the graph.
@@ -129,6 +133,10 @@ class Executor:
             graph_id=self.graph.id,
             config=self.system_config or Config(),
         )
+
+        # Start transaction if enabled
+        if self.config.enable_transactions:
+            self._current_transaction = Transaction(trace_id, self.graph.id)
 
         try:
             # Create initial message
@@ -175,9 +183,35 @@ class Executor:
                 )
 
             recorder.complete(response)
+
+            # Commit or rollback transaction based on success
+            if self.config.enable_transactions and self._current_transaction:
+                if response.success:
+                    await self._current_transaction.commit()
+                else:
+                    rollback_result = await self._current_transaction.rollback()
+                    from tinyllm.logging import get_logger
+                    logger = get_logger(__name__)
+                    logger.info(
+                        "execution_rolled_back",
+                        trace_id=trace_id,
+                        rollback_result=rollback_result,
+                    )
+
             return response
 
         except asyncio.TimeoutError:
+            # Rollback transaction on timeout
+            if self.config.enable_transactions and self._current_transaction:
+                rollback_result = await self._current_transaction.rollback()
+                from tinyllm.logging import get_logger
+                logger = get_logger(__name__)
+                logger.error(
+                    "execution_timeout_rolled_back",
+                    trace_id=trace_id,
+                    rollback_result=rollback_result,
+                )
+
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             response = TaskResponse(
                 trace_id=trace_id,
@@ -195,6 +229,18 @@ class Executor:
             return response
 
         except ExecutionError as e:
+            # Rollback transaction on execution error
+            if self.config.enable_transactions and self._current_transaction:
+                rollback_result = await self._current_transaction.rollback()
+                from tinyllm.logging import get_logger
+                logger = get_logger(__name__)
+                logger.error(
+                    "execution_error_rolled_back",
+                    trace_id=trace_id,
+                    error=str(e),
+                    rollback_result=rollback_result,
+                )
+
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             response = TaskResponse(
                 trace_id=trace_id,
@@ -210,6 +256,25 @@ class Executor:
             )
             recorder.fail(str(e))
             return response
+
+        except Exception as e:
+            # Rollback transaction on any unexpected error
+            if self.config.enable_transactions and self._current_transaction:
+                rollback_result = await self._current_transaction.rollback()
+                from tinyllm.logging import get_logger
+                logger = get_logger(__name__)
+                logger.error(
+                    "execution_failed_rolled_back",
+                    trace_id=trace_id,
+                    error=str(e),
+                    rollback_result=rollback_result,
+                )
+            raise
+
+        finally:
+            # Clear transaction reference
+            if self.config.enable_transactions:
+                self._current_transaction = None
 
     async def _execute_loop(
         self,
@@ -349,7 +414,7 @@ class Executor:
         message: Message,
         context: ExecutionContext,
     ) -> NodeResult:
-        """Execute a single node with timeout.
+        """Execute a single node with timeout and transaction logging.
 
         Args:
             node: Node to execute.
@@ -361,6 +426,15 @@ class Executor:
         """
         start_time = time.perf_counter()
 
+        # Capture state before execution for transaction logging
+        state_before = None
+        if self.config.enable_transactions and self._current_transaction:
+            state_before = {
+                "step_count": context.step_count,
+                "total_tokens": context.total_tokens,
+                "message_count": len(context.messages),
+            }
+
         try:
             # Execute with timeout
             result = await asyncio.wait_for(
@@ -368,6 +442,25 @@ class Executor:
                 timeout=node.config.timeout_ms / 1000,
             )
             result.latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Log operation in transaction
+            if self.config.enable_transactions and self._current_transaction and state_before:
+                state_after = {
+                    "step_count": context.step_count,
+                    "total_tokens": context.total_tokens,
+                    "message_count": len(context.messages),
+                    "success": result.success,
+                }
+
+                self._current_transaction.log_operation(
+                    step=context.step_count,
+                    node_id=node.id,
+                    operation="execute",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reversible=True,  # Most operations are reversible
+                )
+
             return result
 
         except asyncio.TimeoutError:
@@ -712,6 +805,57 @@ class Executor:
         # TODO: Store and return trace from last execution
         return None
 
+    def get_transaction_status(self) -> Optional[Dict[str, Any]]:
+        """Get current transaction status.
+
+        Returns:
+            Transaction status or None if no active transaction.
+        """
+        if self._current_transaction:
+            return self._current_transaction.get_status()
+        return None
+
+    def export_transaction_log(self) -> Optional[List[Dict[str, Any]]]:
+        """Export transaction log for debugging.
+
+        Returns:
+            List of transaction log entries or None if no active transaction.
+        """
+        if self._current_transaction:
+            return [
+                {
+                    "step": log.step,
+                    "node_id": log.node_id,
+                    "operation": log.operation,
+                    "state_before": log.state_before,
+                    "state_after": log.state_after,
+                    "timestamp": log.timestamp,
+                    "reversible": log.reversible,
+                }
+                for log in self._current_transaction.logs
+            ]
+        return None
+
+    async def rollback_to_checkpoint(self, checkpoint_step: int) -> Dict[str, Any]:
+        """Rollback transaction to a specific checkpoint.
+
+        Args:
+            checkpoint_step: Step number to rollback to.
+
+        Returns:
+            Rollback result dictionary.
+
+        Raises:
+            RuntimeError: If no active transaction or transactions not enabled.
+        """
+        if not self.config.enable_transactions:
+            raise RuntimeError("Transactions are not enabled")
+
+        if not self._current_transaction:
+            raise RuntimeError("No active transaction to rollback")
+
+        return await self._current_transaction.rollback(to_step=checkpoint_step)
+
 
 # ============================================================================
 # Transaction Rollback System
@@ -926,8 +1070,11 @@ class Transaction:
 class TransactionalExecutor(Executor):
     """Executor with transaction support for multi-node operations.
 
-    Extends the base Executor with transaction logging and rollback capabilities.
-    When enabled, all node operations are logged and can be rolled back on failure.
+    This class is maintained for backwards compatibility.
+    As of the latest version, all Executors have transaction support enabled by default.
+    You can now use the base Executor class directly with enable_transactions config option.
+
+    Deprecated: Use Executor with config.enable_transactions=True instead.
     """
 
     def __init__(
@@ -945,133 +1092,22 @@ class TransactionalExecutor(Executor):
             system_config: System configuration.
             enable_transactions: Whether to enable transaction logging.
         """
+        # Ensure transactions are enabled if not explicitly disabled
+        if config is None:
+            config = ExecutorConfig(enable_transactions=enable_transactions)
+        else:
+            # Override enable_transactions in config if provided
+            config.enable_transactions = enable_transactions
+
         super().__init__(graph, config, system_config)
-        self.enable_transactions = enable_transactions
-        self._current_transaction: Optional[Transaction] = None
+        # Note: All transaction logic is now in the base Executor class.
+        # This class is maintained only for backwards compatibility.
 
-    async def execute(self, task: TaskPayload) -> TaskResponse:
-        """Execute a task through the graph with transaction support.
-
-        Args:
-            task: Input task payload.
+    @property
+    def enable_transactions(self) -> bool:
+        """Backwards compatibility property for enable_transactions.
 
         Returns:
-            Task response with results.
+            Whether transactions are enabled.
         """
-        if not self.enable_transactions:
-            return await super().execute(task)
-
-        # Start transaction
-        trace_id = str(uuid4())
-        self._current_transaction = Transaction(trace_id, self.graph.id)
-
-        try:
-            response = await super().execute(task)
-
-            # Commit transaction on success
-            if response.success:
-                await self._current_transaction.commit()
-            else:
-                # Rollback on failure
-                rollback_result = await self._current_transaction.rollback()
-
-                from tinyllm.logging import get_logger
-
-                logger = get_logger(__name__)
-                logger.info(
-                    "execution_rolled_back",
-                    trace_id=trace_id,
-                    rollback_result=rollback_result,
-                )
-
-            return response
-
-        except Exception as e:
-            # Rollback on exception
-            if self._current_transaction and not self._current_transaction.rolled_back:
-                rollback_result = await self._current_transaction.rollback()
-
-                from tinyllm.logging import get_logger
-
-                logger = get_logger(__name__)
-                logger.error(
-                    "execution_failed_rolled_back",
-                    trace_id=trace_id,
-                    error=str(e),
-                    rollback_result=rollback_result,
-                )
-
-            raise
-
-        finally:
-            self._current_transaction = None
-
-    async def _execute_node(
-        self,
-        node: BaseNode,
-        message: Message,
-        context: ExecutionContext,
-    ) -> NodeResult:
-        """Execute a single node with transaction logging.
-
-        Args:
-            node: Node to execute.
-            message: Input message.
-            context: Execution context.
-
-        Returns:
-            Node execution result.
-        """
-        # Capture state before execution
-        state_before = {
-            "step_count": context.step_count,
-            "total_tokens": context.total_tokens,
-            "message_count": len(context.messages),
-        }
-
-        # Execute node
-        result = await super()._execute_node(node, message, context)
-
-        # Log operation in transaction
-        if self._current_transaction:
-            state_after = {
-                "step_count": context.step_count,
-                "total_tokens": context.total_tokens,
-                "message_count": len(context.messages),
-                "success": result.success,
-            }
-
-            self._current_transaction.log_operation(
-                step=context.step_count,
-                node_id=node.id,
-                operation="execute",
-                state_before=state_before,
-                state_after=state_after,
-                reversible=True,  # Most operations are reversible
-            )
-
-        return result
-
-    def get_transaction_status(self) -> Optional[Dict[str, Any]]:
-        """Get current transaction status.
-
-        Returns:
-            Transaction status or None if no active transaction.
-        """
-        if self._current_transaction:
-            return self._current_transaction.get_status()
-        return None
-
-    async def rollback_to_checkpoint(self, checkpoint_step: int) -> Dict[str, Any]:
-        """Rollback transaction to a specific checkpoint.
-
-        Args:
-            checkpoint_step: Step number to rollback to.
-
-        Returns:
-            Rollback result dictionary.
-        """
-        if not self._current_transaction:
-            raise RuntimeError("No active transaction to rollback")
-
-        return await self._current_transaction.rollback(to_step=checkpoint_step)
+        return self.config.enable_transactions
