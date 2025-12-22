@@ -97,15 +97,16 @@ class TestTinyLLMError:
         """Test creating base error."""
         error = TinyLLMError(
             "test error",
-            category=ErrorCategory.EXECUTION,
-            severity=ErrorSeverity.ERROR,
-            trace_id="trace-123",
+            code="EXECUTION_ERROR",
+            details={"trace_id": "trace-123"},
+            recoverable=False,
         )
 
         assert error.message == "test error"
-        assert error.category == ErrorCategory.EXECUTION
-        assert error.severity == ErrorSeverity.ERROR
-        assert error.trace_id == "trace-123"
+        assert error.code == "EXECUTION_ERROR"
+        assert error.details["trace_id"] == "trace-123"
+        assert error.recoverable is False
+        assert error.timestamp is not None
 
     def test_error_retryability(self):
         """Test error retryability classification."""
