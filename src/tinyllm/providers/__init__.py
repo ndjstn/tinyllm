@@ -187,6 +187,17 @@ from tinyllm.providers.vllm_client import (
     close_all_vllm_clients,
 )
 
+# Custom model server client imports
+from tinyllm.providers.custom_client import (
+    CustomModelClient,
+    CustomModelConfig,
+    CustomModelResponse,
+    RequestTemplate,
+    ResponseExtractor,
+    get_shared_custom_client,
+    close_all_custom_clients,
+)
+
 __all__ = [
     # OpenAI
     "OpenAIClient",
@@ -352,4 +363,12 @@ __all__ = [
     "VLLMChatCompletionUsage",
     "get_shared_vllm_client",
     "close_all_vllm_clients",
+    # Custom Model Server
+    "CustomModelClient",
+    "CustomModelConfig",
+    "CustomModelResponse",
+    "RequestTemplate",
+    "ResponseExtractor",
+    "get_shared_custom_client",
+    "close_all_custom_clients",
 ]
