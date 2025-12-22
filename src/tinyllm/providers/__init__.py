@@ -162,6 +162,18 @@ from tinyllm.providers.groq_client import CircuitBreaker as GroqCircuitBreaker
 from tinyllm.providers.groq_client import ImageUrl as GroqImageUrl
 from tinyllm.providers.groq_client import ImageUrlDetail as GroqImageUrlDetail
 
+# Llama.cpp client imports
+from tinyllm.providers.llamacpp_client import (
+    LlamaCppClient,
+    LlamaCppConfig,
+    CompletionRequest,
+    CompletionResponse,
+    get_shared_llamacpp_client,
+    close_all_llamacpp_clients,
+)
+from tinyllm.providers.llamacpp_client import RateLimiter as LlamaCppRateLimiter
+from tinyllm.providers.llamacpp_client import CircuitBreaker as LlamaCppCircuitBreaker
+
 __all__ = [
     # OpenAI
     "OpenAIClient",
@@ -308,4 +320,13 @@ __all__ = [
     "GroqImageUrlDetail",
     "get_shared_groq_client",
     "close_all_groq_clients",
+    # Llama.cpp
+    "LlamaCppClient",
+    "LlamaCppConfig",
+    "CompletionRequest",
+    "CompletionResponse",
+    "LlamaCppRateLimiter",
+    "LlamaCppCircuitBreaker",
+    "get_shared_llamacpp_client",
+    "close_all_llamacpp_clients",
 ]
