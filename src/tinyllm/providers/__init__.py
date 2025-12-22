@@ -174,6 +174,19 @@ from tinyllm.providers.llamacpp_client import (
 from tinyllm.providers.llamacpp_client import RateLimiter as LlamaCppRateLimiter
 from tinyllm.providers.llamacpp_client import CircuitBreaker as LlamaCppCircuitBreaker
 
+# vLLM client imports
+from tinyllm.providers.vllm_client import (
+    VLLMClient,
+    VLLMConfig,
+    ChatMessage as VLLMChatMessage,
+    ChatCompletionRequest as VLLMChatCompletionRequest,
+    ChatCompletionResponse as VLLMChatCompletionResponse,
+    ChatCompletionChoice as VLLMChatCompletionChoice,
+    ChatCompletionUsage as VLLMChatCompletionUsage,
+    get_shared_vllm_client,
+    close_all_vllm_clients,
+)
+
 __all__ = [
     # OpenAI
     "OpenAIClient",
@@ -329,4 +342,14 @@ __all__ = [
     "LlamaCppCircuitBreaker",
     "get_shared_llamacpp_client",
     "close_all_llamacpp_clients",
+    # vLLM
+    "VLLMClient",
+    "VLLMConfig",
+    "VLLMChatMessage",
+    "VLLMChatCompletionRequest",
+    "VLLMChatCompletionResponse",
+    "VLLMChatCompletionChoice",
+    "VLLMChatCompletionUsage",
+    "get_shared_vllm_client",
+    "close_all_vllm_clients",
 ]
