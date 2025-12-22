@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from tinyllm.config.loader import Config
 from tinyllm.core.message import Message
@@ -146,25 +146,32 @@ class ExecutionContext(BaseModel):
         description="Maximum total context size in bytes"
     )
 
-    # Memory tracking
-    _warned_message_limit: bool = False
-    _warned_size_limit: bool = False
+    # Memory tracking (private attributes)
+    _warned_message_limit: bool = PrivateAttr(default=False)
+    _warned_size_limit: bool = PrivateAttr(default=False)
+    _total_size_bytes: int = PrivateAttr(default=0)
+    _message_size_cache: Dict[str, int] = PrivateAttr(default_factory=dict)
 
-    def _get_message_size(self, message: Message) -> int:
+    def _get_message_size(self, message: Message, use_cache: bool = True) -> int:
         """Calculate approximate size of a message in bytes.
+
+        Uses caching to avoid recalculating sizes for the same messages.
 
         Args:
             message: Message to measure.
+            use_cache: Whether to use cached size if available (default: True).
 
         Returns:
             Approximate size in bytes.
         """
-        # Use sys.getsizeof for a rough approximation
-        # This includes the message object and its immediate content
+        # Check cache first
+        if use_cache and message.message_id in self._message_size_cache:
+            return self._message_size_cache[message.message_id]
+
+        # Calculate size
         try:
             # Get base size
             size = sys.getsizeof(message.model_dump_json())
-            return size
         except Exception as e:
             logger.warning(
                 "failed_to_calculate_message_size",
@@ -173,22 +180,75 @@ class ExecutionContext(BaseModel):
                 error=str(e),
             )
             # Return a conservative estimate
-            return 1024
+            size = 1024
+
+        # Cache the size
+        self._message_size_cache[message.message_id] = size
+        return size
 
     def _calculate_total_size(self) -> int:
-        """Calculate total size of all messages in bytes.
+        """Get total size of all messages in bytes.
+
+        Returns cached running total for O(1) performance.
+        Only recalculates if cache is stale.
 
         Returns:
             Total size in bytes.
         """
-        return sum(self._get_message_size(msg) for msg in self.messages)
+        return self._total_size_bytes
+
+    def _prune_messages(self) -> int:
+        """Prune old messages to make room for new ones.
+
+        Automatically called when approaching capacity limits (80%).
+        Removes oldest 20% of messages.
+
+        Returns:
+            Number of messages pruned.
+        """
+        # Calculate how many to remove (20% of current messages)
+        remove_count = max(1, len(self.messages) // 5)
+
+        if remove_count == 0:
+            return 0
+
+        # Store messages to remove for size calculation
+        removed_messages = self.messages[:remove_count]
+        removed_size = sum(
+            self._message_size_cache.get(msg.message_id, self._get_message_size(msg))
+            for msg in removed_messages
+        )
+
+        # Remove from cache
+        for msg in removed_messages:
+            self._message_size_cache.pop(msg.message_id, None)
+
+        # Keep only the most recent messages
+        self.messages = self.messages[remove_count:]
+
+        # Update running total
+        self._total_size_bytes -= removed_size
+
+        logger.info(
+            "messages_auto_pruned",
+            trace_id=self.trace_id,
+            removed_count=remove_count,
+            remaining_count=len(self.messages),
+            freed_bytes=removed_size,
+            new_total_bytes=self._total_size_bytes,
+        )
+
+        # Reset warning flags since we've pruned
+        self._warned_message_limit = False
+        self._warned_size_limit = False
+
+        return remove_count
 
     def add_message(self, message: Message) -> None:
         """Add a message to the execution with bounds checking.
 
-        Checks message size and total context size against configured limits.
-        Raises BoundsExceededError if limits are exceeded.
-        Logs warnings when approaching limits (80% threshold).
+        Uses O(1) incremental size tracking for performance.
+        Automatically prunes old messages when approaching limits (80%).
 
         Args:
             message: Message to add.
@@ -217,7 +277,44 @@ class ExecutionContext(BaseModel):
                 },
             )
 
-        # Check message count
+        # Proactive check BEFORE adding - prune if needed
+        projected_total = self._total_size_bytes + message_size
+        projected_count = len(self.messages) + 1
+
+        # Auto-prune at 80% capacity
+        if (projected_total > self.max_total_size_bytes * 0.8 or
+            projected_count > self.max_messages * 0.8):
+            logger.info(
+                "auto_pruning_triggered",
+                trace_id=self.trace_id,
+                projected_total_bytes=projected_total,
+                projected_count=projected_count,
+                utilization_bytes=projected_total / self.max_total_size_bytes,
+                utilization_count=projected_count / self.max_messages,
+            )
+            self._prune_messages()
+
+        # Final bounds check after potential pruning
+        if self._total_size_bytes + message_size > self.max_total_size_bytes:
+            logger.error(
+                "total_size_exceeded",
+                trace_id=self.trace_id,
+                current_size=self._total_size_bytes,
+                message_size=message_size,
+                projected_total=self._total_size_bytes + message_size,
+                limit_bytes=self.max_total_size_bytes,
+            )
+            raise BoundsExceededError(
+                f"Total context size would exceed limit ({self._total_size_bytes + message_size} > {self.max_total_size_bytes} bytes)",
+                limit_type="total_size",
+                current_value=self._total_size_bytes + message_size,
+                limit_value=self.max_total_size_bytes,
+                details={
+                    "message_count": len(self.messages),
+                    "trace_id": self.trace_id,
+                },
+            )
+
         if len(self.messages) >= self.max_messages:
             logger.error(
                 "message_count_exceeded",
@@ -233,62 +330,21 @@ class ExecutionContext(BaseModel):
                 details={"trace_id": self.trace_id},
             )
 
-        # Add message
+        # Add message and update running total atomically
         self.messages.append(message)
+        self._total_size_bytes += message_size
 
-        # Check total size after adding
-        total_size = self._calculate_total_size()
-        if total_size > self.max_total_size_bytes:
-            # Remove the message we just added since we're over limit
-            self.messages.pop()
-            logger.error(
-                "total_size_exceeded",
-                trace_id=self.trace_id,
-                total_size_bytes=total_size,
-                limit_bytes=self.max_total_size_bytes,
-            )
-            raise BoundsExceededError(
-                f"Total context size {total_size} bytes exceeds limit of {self.max_total_size_bytes} bytes",
-                limit_type="total_size",
-                current_value=total_size,
-                limit_value=self.max_total_size_bytes,
-                details={
-                    "message_count": len(self.messages),
-                    "trace_id": self.trace_id,
-                },
-            )
-
-        # Check for approaching limits (80% threshold)
+        # Log memory metrics (using cached total)
         message_utilization = len(self.messages) / self.max_messages
-        if message_utilization >= 0.8 and not self._warned_message_limit:
-            logger.warning(
-                "approaching_message_limit",
-                trace_id=self.trace_id,
-                message_count=len(self.messages),
-                limit=self.max_messages,
-                utilization_pct=int(message_utilization * 100),
-            )
-            self._warned_message_limit = True
+        size_utilization = self._total_size_bytes / self.max_total_size_bytes
 
-        size_utilization = total_size / self.max_total_size_bytes
-        if size_utilization >= 0.8 and not self._warned_size_limit:
-            logger.warning(
-                "approaching_size_limit",
-                trace_id=self.trace_id,
-                total_size_bytes=total_size,
-                limit_bytes=self.max_total_size_bytes,
-                utilization_pct=int(size_utilization * 100),
-            )
-            self._warned_size_limit = True
-
-        # Log memory metrics
         logger.debug(
             "message_added",
             trace_id=self.trace_id,
             message_id=message.message_id,
             message_count=len(self.messages),
             message_size_bytes=message_size,
-            total_size_bytes=total_size,
+            total_size_bytes=self._total_size_bytes,
             message_utilization_pct=int(message_utilization * 100),
             size_utilization_pct=int(size_utilization * 100),
         )
@@ -522,6 +578,8 @@ class ExecutionContext(BaseModel):
         keeping the most recent messages. This is useful for managing
         memory in long-running executions.
 
+        Maintains O(1) performance by updating running total incrementally.
+
         Args:
             keep_count: Number of messages to keep. If None, keeps
                        half of max_messages (default pruning strategy).
@@ -552,11 +610,25 @@ class ExecutionContext(BaseModel):
         current_count = len(self.messages)
         remove_count = current_count - keep_count
 
-        # Store messages to remove for logging
-        removed_ids = [msg.message_id for msg in self.messages[:remove_count]]
+        # Store messages to remove for logging and size calculation
+        removed_messages = self.messages[:remove_count]
+        removed_ids = [msg.message_id for msg in removed_messages]
+
+        # Calculate size of removed messages
+        removed_size = sum(
+            self._message_size_cache.get(msg.message_id, self._get_message_size(msg))
+            for msg in removed_messages
+        )
+
+        # Remove from cache
+        for msg in removed_messages:
+            self._message_size_cache.pop(msg.message_id, None)
 
         # Keep only the most recent messages
         self.messages = self.messages[-keep_count:]
+
+        # Update running total
+        self._total_size_bytes -= removed_size
 
         logger.info(
             "messages_pruned",
@@ -565,6 +637,7 @@ class ExecutionContext(BaseModel):
             remaining_count=len(self.messages),
             kept_count=keep_count,
             removed_message_ids=removed_ids[:10],  # Log first 10 IDs
+            freed_bytes=removed_size,
         )
 
         # Reset warning flags since we've pruned
@@ -572,13 +645,12 @@ class ExecutionContext(BaseModel):
         self._warned_size_limit = False
 
         # Log new memory stats after pruning
-        new_size = self._calculate_total_size()
         logger.info(
             "memory_after_pruning",
             trace_id=self.trace_id,
             message_count=len(self.messages),
-            total_size_bytes=new_size,
-            size_utilization_pct=int((new_size / self.max_total_size_bytes) * 100),
+            total_size_bytes=self._total_size_bytes,
+            size_utilization_pct=int((self._total_size_bytes / self.max_total_size_bytes) * 100),
         )
 
         return remove_count
