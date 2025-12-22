@@ -74,6 +74,18 @@ from tinyllm.tools.web_search import (
     WebSearchOutput,
     WebSearchTool,
 )
+from tinyllm.tools.web_search_v2 import (
+    ContentExtractor as ContentExtractorV2,
+    ContentQuality,
+    EnhancedSearchResult,
+    EnhancedWebSearchConfig,
+    EnhancedWebSearchTool,
+    QualityMetrics,
+    QualityScorer,
+    ResultClusterer,
+    ResultType,
+    cosine_similarity,
+)
 from tinyllm.tools.analytics import (
     AnalyticsReport,
     AnalyticsToolWrapper,
@@ -587,6 +599,17 @@ __all__ = [
     "RateLimiter",
     "ResultDeduplicator",
     "ContentFetcher",
+    # Web Search V2 (Enhanced)
+    "EnhancedWebSearchTool",
+    "EnhancedWebSearchConfig",
+    "EnhancedSearchResult",
+    "ContentExtractorV2",
+    "QualityScorer",
+    "QualityMetrics",
+    "ContentQuality",
+    "ResultType",
+    "ResultClusterer",
+    "cosine_similarity",
     # Analytics
     "UsageAnalytics",
     "UsageRecord",
