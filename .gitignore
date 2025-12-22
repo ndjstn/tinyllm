@@ -160,4 +160,7 @@ logs/
 *.bin
 *.gguf
 .serena/
+
+# SQLite databases
 mydatabase.db
+*.db
