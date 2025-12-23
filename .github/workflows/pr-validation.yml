@@ -204,7 +204,10 @@ jobs:
             exit 1
           else
             echo "✅ No merge conflicts"
-            git merge --abort
+            # Only abort if there's actually a merge in progress
+            if [ -f .git/MERGE_HEAD ]; then
+              git merge --abort
+            fi
           fi
 
   validation-summary:
