@@ -745,7 +745,343 @@ async def configure_default_health_checks(
     )
 
 
+# ============================================================================
+# Node-level Circuit Breaker (for graph execution)
+# ============================================================================
+
+
+@dataclass
+class NodeHealthStatus:
+    """Health status for a graph execution node."""
+
+    node_id: str
+    is_healthy: bool
+    failure_count: int
+    success_count: int
+    circuit_open: bool
+    cooldown_until: Optional[float] = None
+    last_failure_time: Optional[float] = None
+    last_success_time: Optional[float] = None
+
+
+@dataclass
+class NodeHealthTrackerConfig:
+    """Configuration for NodeHealthTracker."""
+
+    failure_threshold: int = 3
+    """Number of consecutive failures before opening circuit."""
+
+    cooldown_seconds: float = 60.0
+    """Cooldown period before attempting to use node again."""
+
+    success_threshold: int = 2
+    """Number of consecutive successes to close circuit."""
+
+    health_check_interval: float = 300.0
+    """Interval for resetting health stats (seconds)."""
+
+
+class NodeHealthTracker:
+    """Track node health and implement circuit breaker pattern for graph execution.
+
+    The circuit breaker pattern prevents cascading failures by:
+    1. Tracking failure rates for each node in the graph
+    2. Opening circuit (blocking requests) after threshold failures
+    3. Implementing cooldown period before retry
+    4. Closing circuit after successful recovery
+
+    This is specifically for graph execution nodes, not external dependencies.
+    For dependency health checks, use HealthMonitor instead.
+
+    Usage:
+        tracker = NodeHealthTracker()
+
+        # Before executing node
+        if not tracker.is_healthy(node_id):
+            # Skip node or find alternative path
+            pass
+
+        # After execution
+        if success:
+            tracker.record_success(node_id)
+        else:
+            tracker.record_failure(node_id)
+    """
+
+    def __init__(self, config: Optional[NodeHealthTrackerConfig] = None):
+        """Initialize node health tracker.
+
+        Args:
+            config: Configuration for health tracking behavior
+        """
+        self.config = config or NodeHealthTrackerConfig()
+
+        # Tracking state
+        from collections import defaultdict
+
+        self._failure_counts: dict[str, int] = defaultdict(int)
+        self._success_counts: dict[str, int] = defaultdict(int)
+        self._circuit_breakers: dict[str, float] = {}  # node_id → cooldown_until
+        self._last_failure_time: dict[str, float] = {}
+        self._last_success_time: dict[str, float] = {}
+
+        # Stats
+        self._total_failures: int = 0
+        self._total_successes: int = 0
+        self._circuit_breaks: int = 0
+        self._last_reset_time: float = time.time()
+
+    def record_failure(self, node_id: str, error: Optional[str] = None) -> None:
+        """Record a failure for a node.
+
+        Args:
+            node_id: ID of the node that failed
+            error: Optional error message for logging
+        """
+        current_time = time.time()
+
+        # Increment failure count
+        self._failure_counts[node_id] += 1
+        self._total_failures += 1
+        self._last_failure_time[node_id] = current_time
+
+        # Reset success count on failure
+        self._success_counts[node_id] = 0
+
+        logger.warning(
+            "node_failure_recorded",
+            node_id=node_id,
+            failure_count=self._failure_counts[node_id],
+            threshold=self.config.failure_threshold,
+            error=error,
+        )
+
+        # Check if we should open circuit
+        if self._failure_counts[node_id] >= self.config.failure_threshold:
+            self._open_circuit(node_id)
+
+    def record_success(self, node_id: str) -> None:
+        """Record a success for a node.
+
+        Args:
+            node_id: ID of the node that succeeded
+        """
+        current_time = time.time()
+
+        # Increment success count
+        self._success_counts[node_id] += 1
+        self._total_successes += 1
+        self._last_success_time[node_id] = current_time
+
+        # Reset failure count on success
+        self._failure_counts[node_id] = 0
+
+        logger.debug(
+            "node_success_recorded",
+            node_id=node_id,
+            success_count=self._success_counts[node_id],
+        )
+
+        # Check if we should close circuit
+        if node_id in self._circuit_breakers:
+            if self._success_counts[node_id] >= self.config.success_threshold:
+                self._close_circuit(node_id)
+
+    def is_healthy(self, node_id: str) -> bool:
+        """Check if a node is healthy and can be used.
+
+        Args:
+            node_id: ID of the node to check
+
+        Returns:
+            True if node is healthy, False if circuit is open
+        """
+        # Check if circuit is open
+        if node_id in self._circuit_breakers:
+            cooldown_until = self._circuit_breakers[node_id]
+            current_time = time.time()
+
+            if current_time < cooldown_until:
+                # Still in cooldown
+                remaining = cooldown_until - current_time
+                logger.debug(
+                    "node_circuit_open",
+                    node_id=node_id,
+                    cooldown_remaining_seconds=remaining,
+                )
+                return False
+
+            # Cooldown expired - allow retry
+            logger.info(
+                "node_cooldown_expired",
+                node_id=node_id,
+                attempting_retry=True,
+            )
+            # Don't remove from circuit breakers yet - wait for success
+
+        return True
+
+    def _open_circuit(self, node_id: str) -> None:
+        """Open circuit breaker for a node.
+
+        Args:
+            node_id: ID of the node to block
+        """
+        cooldown_until = time.time() + self.config.cooldown_seconds
+        self._circuit_breakers[node_id] = cooldown_until
+        self._circuit_breaks += 1
+
+        logger.error(
+            "circuit_breaker_opened",
+            node_id=node_id,
+            failure_count=self._failure_counts[node_id],
+            cooldown_seconds=self.config.cooldown_seconds,
+            cooldown_until_timestamp=cooldown_until,
+        )
+
+    def _close_circuit(self, node_id: str) -> None:
+        """Close circuit breaker for a node.
+
+        Args:
+            node_id: ID of the node to unblock
+        """
+        if node_id in self._circuit_breakers:
+            del self._circuit_breakers[node_id]
+
+            logger.info(
+                "circuit_breaker_closed",
+                node_id=node_id,
+                success_count=self._success_counts[node_id],
+            )
+
+    def get_node_status(self, node_id: str) -> NodeHealthStatus:
+        """Get detailed health status for a node.
+
+        Args:
+            node_id: ID of the node
+
+        Returns:
+            NodeHealthStatus with current state
+        """
+        circuit_open = node_id in self._circuit_breakers
+        cooldown_until = self._circuit_breakers.get(node_id)
+
+        return NodeHealthStatus(
+            node_id=node_id,
+            is_healthy=self.is_healthy(node_id),
+            failure_count=self._failure_counts[node_id],
+            success_count=self._success_counts[node_id],
+            circuit_open=circuit_open,
+            cooldown_until=cooldown_until,
+            last_failure_time=self._last_failure_time.get(node_id),
+            last_success_time=self._last_success_time.get(node_id),
+        )
+
+    def get_all_statuses(self) -> dict[str, NodeHealthStatus]:
+        """Get health status for all tracked nodes.
+
+        Returns:
+            Dictionary mapping node_id to NodeHealthStatus
+        """
+        all_nodes = set(self._failure_counts.keys()) | set(self._success_counts.keys())
+        return {node_id: self.get_node_status(node_id) for node_id in all_nodes}
+
+    def get_unhealthy_nodes(self) -> list[str]:
+        """Get list of currently unhealthy node IDs.
+
+        Returns:
+            List of node IDs with open circuits
+        """
+        return [
+            node_id
+            for node_id in self._circuit_breakers.keys()
+            if not self.is_healthy(node_id)
+        ]
+
+    def reset_node(self, node_id: str) -> None:
+        """Reset health tracking for a specific node.
+
+        Args:
+            node_id: ID of the node to reset
+        """
+        self._failure_counts.pop(node_id, None)
+        self._success_counts.pop(node_id, None)
+        self._circuit_breakers.pop(node_id, None)
+        self._last_failure_time.pop(node_id, None)
+        self._last_success_time.pop(node_id, None)
+
+        logger.info("node_health_reset", node_id=node_id)
+
+    def reset_all(self) -> None:
+        """Reset all health tracking state."""
+        self._failure_counts.clear()
+        self._success_counts.clear()
+        self._circuit_breakers.clear()
+        self._last_failure_time.clear()
+        self._last_success_time.clear()
+        self._total_failures = 0
+        self._total_successes = 0
+        self._circuit_breaks = 0
+        self._last_reset_time = time.time()
+
+        logger.info("all_node_health_tracking_reset")
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get overall node health tracking statistics.
+
+        Returns:
+            Dictionary with tracking stats
+        """
+        current_time = time.time()
+        uptime = current_time - self._last_reset_time
+
+        return {
+            "total_failures": self._total_failures,
+            "total_successes": self._total_successes,
+            "total_circuit_breaks": self._circuit_breaks,
+            "currently_open_circuits": len(self._circuit_breakers),
+            "tracked_nodes": len(
+                set(self._failure_counts.keys()) | set(self._success_counts.keys())
+            ),
+            "unhealthy_nodes": len(self.get_unhealthy_nodes()),
+            "uptime_seconds": uptime,
+            "failure_threshold": self.config.failure_threshold,
+            "cooldown_seconds": self.config.cooldown_seconds,
+            "success_threshold": self.config.success_threshold,
+        }
+
+
+# Global node health tracker instance
+_global_node_health_tracker: Optional[NodeHealthTracker] = None
+
+
+def get_node_health_tracker(
+    config: Optional[NodeHealthTrackerConfig] = None,
+) -> NodeHealthTracker:
+    """Get or create global node health tracker instance.
+
+    Args:
+        config: Optional configuration (only used on first call)
+
+    Returns:
+        Global NodeHealthTracker instance
+    """
+    global _global_node_health_tracker
+
+    if _global_node_health_tracker is None:
+        _global_node_health_tracker = NodeHealthTracker(config)
+
+    return _global_node_health_tracker
+
+
+def reset_node_health_tracker() -> None:
+    """Reset global node health tracker (mainly for testing)."""
+    global _global_node_health_tracker
+    _global_node_health_tracker = None
+
+
 __all__ = [
+    # Dependency health checks
     "HealthStatus",
     "DependencyType",
     "HealthCheckResult",
@@ -758,4 +1094,10 @@ __all__ = [
     "HealthMonitor",
     "get_health_monitor",
     "configure_default_health_checks",
+    # Node-level circuit breaker
+    "NodeHealthStatus",
+    "NodeHealthTrackerConfig",
+    "NodeHealthTracker",
+    "get_node_health_tracker",
+    "reset_node_health_tracker",
 ]

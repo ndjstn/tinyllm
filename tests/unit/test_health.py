@@ -11,12 +11,16 @@ from tinyllm.health import (
     HealthChecker,
     HealthMonitor,
     HealthStatus,
+    NodeHealthTracker,
+    NodeHealthTrackerConfig,
     OllamaHealthChecker,
     RedisHealthChecker,
     SQLiteHealthChecker,
     TelemetryHealthChecker,
     configure_default_health_checks,
     get_health_monitor,
+    get_node_health_tracker,
+    reset_node_health_tracker,
 )
 
 
@@ -435,3 +439,278 @@ class TestConfigureDefaultHealthChecks:
         assert "redis" not in monitor._checkers
         assert "sqlite" not in monitor._checkers
         assert "telemetry" in monitor._checkers
+
+
+# ============================================================================
+# Node-level Circuit Breaker Tests
+# ============================================================================
+
+
+class TestNodeHealthTrackerConfig:
+    """Test NodeHealthTrackerConfig."""
+
+    def test_default_config(self):
+        """Test default configuration."""
+        config = NodeHealthTrackerConfig()
+
+        assert config.failure_threshold == 3
+        assert config.cooldown_seconds == 60.0
+        assert config.success_threshold == 2
+
+    def test_custom_config(self):
+        """Test custom configuration."""
+        config = NodeHealthTrackerConfig(
+            failure_threshold=5,
+            cooldown_seconds=120.0,
+            success_threshold=3,
+        )
+
+        assert config.failure_threshold == 5
+        assert config.cooldown_seconds == 120.0
+        assert config.success_threshold == 3
+
+
+class TestNodeHealthTracker:
+    """Test NodeHealthTracker circuit breaker."""
+
+    def test_initialization(self):
+        """Test tracker initialization."""
+        tracker = NodeHealthTracker()
+
+        assert tracker.config.failure_threshold == 3
+        assert tracker.config.cooldown_seconds == 60.0
+        assert tracker._total_failures == 0
+        assert tracker._total_successes == 0
+
+    def test_record_success(self):
+        """Test recording node success."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_success("node1")
+
+        assert tracker._success_counts["node1"] == 1
+        assert tracker._failure_counts["node1"] == 0
+        assert tracker._total_successes == 1
+
+    def test_record_failure(self):
+        """Test recording node failure."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1", error="Test error")
+
+        assert tracker._failure_counts["node1"] == 1
+        assert tracker._success_counts["node1"] == 0
+        assert tracker._total_failures == 1
+
+    def test_circuit_opens_after_threshold(self):
+        """Test circuit opens after failure threshold."""
+        config = NodeHealthTrackerConfig(failure_threshold=3)
+        tracker = NodeHealthTracker(config)
+
+        # Record failures
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")
+        assert tracker.is_healthy("node1")  # Still healthy
+
+        tracker.record_failure("node1")  # Should open circuit
+        assert not tracker.is_healthy("node1")  # Circuit open
+
+    def test_circuit_closes_after_success(self):
+        """Test circuit closes after success threshold."""
+        import time
+
+        config = NodeHealthTrackerConfig(
+            failure_threshold=2,
+            success_threshold=2,
+            cooldown_seconds=0.1,  # Short cooldown for testing
+        )
+        tracker = NodeHealthTracker(config)
+
+        # Open circuit
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")
+        assert not tracker.is_healthy("node1")
+
+        # Wait for cooldown
+        time.sleep(0.15)
+
+        # Should allow retry
+        assert tracker.is_healthy("node1")
+
+        # Record successes
+        tracker.record_success("node1")
+        tracker.record_success("node1")
+
+        # Circuit should be closed
+        assert "node1" not in tracker._circuit_breakers
+
+    def test_cooldown_period(self):
+        """Test cooldown period prevents retry."""
+        import time
+
+        config = NodeHealthTrackerConfig(
+            failure_threshold=2,
+            cooldown_seconds=0.2,  # 200ms cooldown
+        )
+        tracker = NodeHealthTracker(config)
+
+        # Open circuit
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")
+
+        # Circuit should be open
+        assert not tracker.is_healthy("node1")
+
+        # Still in cooldown
+        time.sleep(0.1)
+        assert not tracker.is_healthy("node1")
+
+        # After cooldown
+        time.sleep(0.15)
+        assert tracker.is_healthy("node1")
+
+    def test_success_resets_failure_count(self):
+        """Test that success resets failure count."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")
+        assert tracker._failure_counts["node1"] == 2
+
+        tracker.record_success("node1")
+        assert tracker._failure_counts["node1"] == 0
+        assert tracker._success_counts["node1"] == 1
+
+    def test_failure_resets_success_count(self):
+        """Test that failure resets success count."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_success("node1")
+        tracker.record_success("node1")
+        assert tracker._success_counts["node1"] == 2
+
+        tracker.record_failure("node1")
+        assert tracker._success_counts["node1"] == 0
+        assert tracker._failure_counts["node1"] == 1
+
+    def test_get_node_status(self):
+        """Test getting node status."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1")
+        status = tracker.get_node_status("node1")
+
+        assert status.node_id == "node1"
+        assert status.is_healthy is True  # Only 1 failure
+        assert status.failure_count == 1
+        assert status.success_count == 0
+        assert status.circuit_open is False
+
+    def test_get_all_statuses(self):
+        """Test getting all node statuses."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1")
+        tracker.record_success("node2")
+
+        statuses = tracker.get_all_statuses()
+
+        assert len(statuses) == 2
+        assert "node1" in statuses
+        assert "node2" in statuses
+
+    def test_get_unhealthy_nodes(self):
+        """Test getting unhealthy nodes."""
+        config = NodeHealthTrackerConfig(failure_threshold=2)
+        tracker = NodeHealthTracker(config)
+
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")  # Opens circuit
+        tracker.record_success("node2")
+
+        unhealthy = tracker.get_unhealthy_nodes()
+
+        assert len(unhealthy) == 1
+        assert "node1" in unhealthy
+        assert "node2" not in unhealthy
+
+    def test_reset_node(self):
+        """Test resetting a specific node."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1")
+        tracker.record_success("node2")
+
+        tracker.reset_node("node1")
+
+        assert tracker._failure_counts["node1"] == 0
+        assert tracker._success_counts["node2"] == 1  # Node2 unchanged
+
+    def test_reset_all(self):
+        """Test resetting all nodes."""
+        tracker = NodeHealthTracker()
+
+        tracker.record_failure("node1")
+        tracker.record_success("node2")
+
+        tracker.reset_all()
+
+        assert len(tracker._failure_counts) == 0
+        assert len(tracker._success_counts) == 0
+        assert tracker._total_failures == 0
+        assert tracker._total_successes == 0
+
+    def test_get_stats(self):
+        """Test getting tracker statistics."""
+        config = NodeHealthTrackerConfig(failure_threshold=2)
+        tracker = NodeHealthTracker(config)
+
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")  # Opens circuit
+        tracker.record_success("node2")
+
+        stats = tracker.get_stats()
+
+        assert stats["total_failures"] == 2
+        assert stats["total_successes"] == 1
+        assert stats["total_circuit_breaks"] == 1
+        assert stats["currently_open_circuits"] == 1
+        assert stats["tracked_nodes"] == 2
+        assert stats["failure_threshold"] == 2
+
+    def test_multiple_nodes_independent(self):
+        """Test that different nodes are tracked independently."""
+        config = NodeHealthTrackerConfig(failure_threshold=2)
+        tracker = NodeHealthTracker(config)
+
+        # Node1 fails
+        tracker.record_failure("node1")
+        tracker.record_failure("node1")
+
+        # Node2 succeeds
+        tracker.record_success("node2")
+
+        assert not tracker.is_healthy("node1")  # Circuit open
+        assert tracker.is_healthy("node2")  # Still healthy
+
+    def test_global_tracker_singleton(self):
+        """Test global tracker singleton."""
+        reset_node_health_tracker()
+
+        tracker1 = get_node_health_tracker()
+        tracker2 = get_node_health_tracker()
+
+        assert tracker1 is tracker2
+
+    def test_global_tracker_reset(self):
+        """Test resetting global tracker."""
+        reset_node_health_tracker()
+
+        tracker1 = get_node_health_tracker()
+        tracker1.record_failure("node1")
+
+        reset_node_health_tracker()
+
+        tracker2 = get_node_health_tracker()
+        assert tracker1 is not tracker2
+        assert tracker2._total_failures == 0

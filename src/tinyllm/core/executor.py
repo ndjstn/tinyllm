@@ -25,7 +25,11 @@ from tinyllm.core.message import (
 )
 from tinyllm.core.node import BaseNode, NodeResult
 from tinyllm.core.trace import ExecutionTrace, TraceRecorder
+from tinyllm.health import NodeHealthTracker, get_node_health_tracker
+from tinyllm.logging import get_logger
 from tinyllm.profiling import get_profiling_context
+
+logger = get_logger(__name__)
 
 
 class DegradationMode(str, Enum):
@@ -66,6 +70,15 @@ class ExecutorConfig(BaseModel):
     )
     enable_transactions: bool = Field(
         default=True, description="Enable transactional execution with rollback support"
+    )
+    enable_circuit_breaker: bool = Field(
+        default=True, description="Enable circuit breaker for unhealthy nodes"
+    )
+    circuit_breaker_threshold: int = Field(
+        default=3, ge=1, description="Failures before opening circuit"
+    )
+    circuit_breaker_cooldown_seconds: float = Field(
+        default=60.0, ge=1.0, description="Cooldown period for circuit breaker"
     )
 
 
@@ -111,6 +124,18 @@ class Executor:
         self._checkpoints: List[Dict[str, Any]] = []
         self._last_checkpoint_step = 0
         self._current_transaction: Optional[Transaction] = None
+
+        # Initialize circuit breaker if enabled
+        if self.config.enable_circuit_breaker:
+            from tinyllm.health import NodeHealthTrackerConfig
+
+            health_config = NodeHealthTrackerConfig(
+                failure_threshold=self.config.circuit_breaker_threshold,
+                cooldown_seconds=self.config.circuit_breaker_cooldown_seconds,
+            )
+            self._health_tracker = NodeHealthTracker(health_config)
+        else:
+            self._health_tracker = None
 
     async def execute(self, task: TaskPayload) -> TaskResponse:
         """Execute a task through the graph.
@@ -414,7 +439,7 @@ class Executor:
         message: Message,
         context: ExecutionContext,
     ) -> NodeResult:
-        """Execute a single node with timeout and transaction logging.
+        """Execute a single node with timeout, transaction logging, and circuit breaker.
 
         Args:
             node: Node to execute.
@@ -425,6 +450,18 @@ class Executor:
             Node execution result.
         """
         start_time = time.perf_counter()
+
+        # Check circuit breaker before execution
+        if self._health_tracker and not self._health_tracker.is_healthy(node.id):
+            logger.warning(
+                "node_skipped_circuit_open",
+                node_id=node.id,
+                trace_id=context.trace_id,
+            )
+            return NodeResult.failure_result(
+                error=f"Node {node.id} is unhealthy (circuit breaker open)",
+                latency_ms=0,
+            )
 
         # Capture state before execution for transaction logging
         state_before = None
@@ -442,6 +479,15 @@ class Executor:
                 timeout=node.config.timeout_ms / 1000,
             )
             result.latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Record success in health tracker
+            if self._health_tracker:
+                if result.success:
+                    self._health_tracker.record_success(node.id)
+                else:
+                    # Node executed but returned failure
+                    error_msg = result.error.message if result.error else "Unknown error"
+                    self._health_tracker.record_failure(node.id, error=error_msg)
 
             # Log operation in transaction
             if self.config.enable_transactions and self._current_transaction and state_before:
@@ -465,6 +511,14 @@ class Executor:
 
         except asyncio.TimeoutError:
             latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Record timeout failure in health tracker
+            if self._health_tracker:
+                self._health_tracker.record_failure(
+                    node.id,
+                    error=f"Timeout after {node.config.timeout_ms}ms"
+                )
+
             return NodeResult.failure_result(
                 error=f"Node {node.id} timed out after {node.config.timeout_ms}ms",
                 latency_ms=latency_ms,
@@ -472,6 +526,11 @@ class Executor:
 
         except Exception as e:
             latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Record exception failure in health tracker
+            if self._health_tracker:
+                self._health_tracker.record_failure(node.id, error=str(e))
+
             return NodeResult.failure_result(
                 error=f"Node {node.id} failed: {str(e)}",
                 latency_ms=latency_ms,
@@ -855,6 +914,90 @@ class Executor:
             raise RuntimeError("No active transaction to rollback")
 
         return await self._current_transaction.rollback(to_step=checkpoint_step)
+
+    def get_circuit_breaker_stats(self) -> Optional[Dict[str, Any]]:
+        """Get circuit breaker statistics.
+
+        Returns:
+            Dictionary with circuit breaker stats or None if disabled.
+        """
+        if not self._health_tracker:
+            return None
+
+        return self._health_tracker.get_stats()
+
+    def get_node_health_status(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """Get health status for a specific node.
+
+        Args:
+            node_id: ID of the node to check.
+
+        Returns:
+            Node health status dictionary or None if circuit breaker disabled.
+        """
+        if not self._health_tracker:
+            return None
+
+        status = self._health_tracker.get_node_status(node_id)
+        return {
+            "node_id": status.node_id,
+            "is_healthy": status.is_healthy,
+            "failure_count": status.failure_count,
+            "success_count": status.success_count,
+            "circuit_open": status.circuit_open,
+            "cooldown_until": status.cooldown_until,
+            "last_failure_time": status.last_failure_time,
+            "last_success_time": status.last_success_time,
+        }
+
+    def get_all_node_health_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """Get health status for all tracked nodes.
+
+        Returns:
+            Dictionary mapping node_id to health status.
+        """
+        if not self._health_tracker:
+            return {}
+
+        statuses = self._health_tracker.get_all_statuses()
+        return {
+            node_id: {
+                "node_id": status.node_id,
+                "is_healthy": status.is_healthy,
+                "failure_count": status.failure_count,
+                "success_count": status.success_count,
+                "circuit_open": status.circuit_open,
+                "cooldown_until": status.cooldown_until,
+                "last_failure_time": status.last_failure_time,
+                "last_success_time": status.last_success_time,
+            }
+            for node_id, status in statuses.items()
+        }
+
+    def get_unhealthy_nodes(self) -> List[str]:
+        """Get list of currently unhealthy nodes.
+
+        Returns:
+            List of node IDs with open circuits.
+        """
+        if not self._health_tracker:
+            return []
+
+        return self._health_tracker.get_unhealthy_nodes()
+
+    def reset_node_health(self, node_id: str) -> None:
+        """Reset health tracking for a specific node.
+
+        Args:
+            node_id: ID of the node to reset.
+        """
+        if self._health_tracker:
+            self._health_tracker.reset_node(node_id)
+
+    def reset_all_node_health(self) -> None:
+        """Reset health tracking for all nodes."""
+        if self._health_tracker:
+            self._health_tracker.reset_all()
 
 
 # ============================================================================
