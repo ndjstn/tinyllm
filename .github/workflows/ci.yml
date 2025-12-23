@@ -50,6 +50,9 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
+          # Install pytest-rerunfailures explicitly if not already installed
+          uv pip list | grep pytest-rerunfailures || uv pip install pytest-rerunfailures
+
           uv run pytest tests/unit \
             --cov=src/tinyllm \
             --cov-report=xml \
@@ -100,6 +103,9 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379
         run: |
+          # Install pytest-rerunfailures explicitly if not already installed
+          uv pip list | grep pytest-rerunfailures || uv pip install pytest-rerunfailures
+
           uv run pytest tests/integration \
             -v \
             --reruns 2 \
