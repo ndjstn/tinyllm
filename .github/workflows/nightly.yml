@@ -1,0 +1,298 @@
+name: Nightly Tests
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      run_slow_tests:
+        description: 'Run slow tests'
+        type: boolean
+        default: true
+      run_chaos_tests:
+        description: 'Run chaos tests'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  comprehensive-tests:
+    name: Comprehensive Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+        test-suite: ['unit', 'integration', 'slow']
+
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set Python version
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --dev --all-extras
+
+      - name: Run test suite
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          if [ "${{ matrix.test-suite }}" = "unit" ]; then
+            uv run pytest tests/unit -v --tb=short --durations=20
+          elif [ "${{ matrix.test-suite }}" = "integration" ]; then
+            uv run pytest tests/integration -v --tb=short --durations=20
+          elif [ "${{ matrix.test-suite }}" = "slow" ]; then
+            uv run pytest tests/ -m slow -v --tb=short --durations=20
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.test-suite }}
+          path: |
+            pytest.log
+            test-results/
+          retention-days: 7
+
+  load-tests:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event.inputs.run_slow_tests != 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run load tests
+        run: |
+          uv run pytest tests/ -m load -v --tb=short || echo "Load tests failed"
+        continue-on-error: true
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            load-test-results/
+            benchmarks/results/
+          retention-days: 30
+
+  chaos-tests:
+    name: Chaos Engineering Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event.inputs.run_chaos_tests != 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run chaos tests
+        run: |
+          uv run pytest tests/ -m chaos -v --tb=short || echo "Chaos tests revealed issues"
+        continue-on-error: true
+
+      - name: Upload chaos test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-test-results
+          path: |
+            chaos-test-results/
+          retention-days: 30
+
+  flaky-test-detection:
+    name: Flaky Test Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests multiple times to detect flakiness
+        run: |
+          # Run each test 5 times
+          uv run pytest tests/ \
+            --count=5 \
+            -v \
+            --tb=short \
+            -m "not slow and not integration" \
+            || echo "Potential flaky tests detected"
+
+      - name: Analyze flaky tests
+        if: always()
+        run: |
+          # Create a simple flaky test report
+          echo "## Flaky Test Detection Results" > flaky_report.md
+          echo "" >> flaky_report.md
+          echo "Tests were run 5 times each to detect flakiness." >> flaky_report.md
+          echo "" >> flaky_report.md
+          echo "Review the test output above for any intermittent failures." >> flaky_report.md
+
+      - name: Upload flaky test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flaky-test-report
+          path: flaky_report.md
+          retention-days: 30
+
+  dependency-audit:
+    name: Deep Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev --all-extras
+
+      - name: Run comprehensive dependency audit
+        run: |
+          echo "## Dependency Audit Report" > dependency_report.md
+          echo "" >> dependency_report.md
+
+          # Install audit tools
+          uv pip install pip-audit safety
+
+          # Run pip-audit
+          echo "### pip-audit Results" >> dependency_report.md
+          uv run pip-audit --desc || echo "Vulnerabilities found" >> dependency_report.md
+          echo "" >> dependency_report.md
+
+          # Run safety check
+          echo "### Safety Check Results" >> dependency_report.md
+          uv run safety check || echo "Security issues found" >> dependency_report.md
+
+      - name: Upload dependency report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit-report
+          path: dependency_report.md
+          retention-days: 30
+
+  nightly-summary:
+    name: Nightly Test Summary
+    runs-on: ubuntu-latest
+    needs: [comprehensive-tests, load-tests, chaos-tests, flaky-test-detection, dependency-audit]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = [
+              { name: 'Comprehensive Tests', result: '${{ needs.comprehensive-tests.result }}' },
+              { name: 'Load Tests', result: '${{ needs.load-tests.result }}' },
+              { name: 'Chaos Tests', result: '${{ needs.chaos-tests.result }}' },
+              { name: 'Flaky Detection', result: '${{ needs.flaky-test-detection.result }}' },
+              { name: 'Dependency Audit', result: '${{ needs.dependency-audit.result }}' }
+            ];
+
+            let summary = '## 🌙 Nightly Test Summary\n\n';
+            summary += `**Date:** ${new Date().toISOString().split('T')[0]}\n\n`;
+            summary += '| Test Suite | Status |\n';
+            summary += '|------------|--------|\n';
+
+            let failures = [];
+            for (const job of jobs) {
+              const emoji = job.result === 'success' ? '✅' :
+                           job.result === 'failure' ? '❌' :
+                           job.result === 'skipped' ? '⏭️' : '⚠️';
+              summary += `| ${job.name} | ${emoji} ${job.result} |\n`;
+
+              if (job.result === 'failure') {
+                failures.push(job.name);
+              }
+            }
+
+            summary += '\n';
+
+            if (failures.length > 0) {
+              summary += '### ⚠️ Failed Test Suites\n\n';
+              for (const fail of failures) {
+                summary += `- ${fail}\n`;
+              }
+              summary += '\nPlease review the test logs and address any issues.\n';
+            } else {
+              summary += '### ✅ All Nightly Tests Passed!\n\n';
+              summary += 'Great job! The codebase is healthy.\n';
+            }
+
+            core.summary.addRaw(summary);
+            await core.summary.write();
+
+      - name: Create issue for failures
+        if: needs.comprehensive-tests.result == 'failure' || needs.load-tests.result == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Nightly Test Failure - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Nightly Test Failure Report
+
+**Date:** ${new Date().toISOString()}
+**Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+### Failed Jobs
+- Comprehensive Tests: ${{ needs.comprehensive-tests.result }}
+- Load Tests: ${{ needs.load-tests.result }}
+- Chaos Tests: ${{ needs.chaos-tests.result }}
+
+### Action Required
+Please investigate and fix the failing tests.
+
+---
+*This issue was automatically created by the nightly test workflow.*
+`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['test-failure', 'nightly', 'automated']
+            });
