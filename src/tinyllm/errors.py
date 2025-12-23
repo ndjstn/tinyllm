@@ -168,6 +168,153 @@ class ConfigurationError(FatalError):
 
 
 # ============================================================================
+# Node-specific Errors (for graph execution)
+# ============================================================================
+
+
+class RetryableNodeError(RetryableError):
+    """Retryable node execution errors.
+
+    Use this for transient failures in node execution that may succeed on retry.
+    Examples: temporary model failures, transient network issues, resource contention.
+    """
+
+    def __init__(
+        self,
+        node_id: str,
+        attempt: int = 1,
+        max_retries: int = 3,
+        reason: Optional[str] = None,
+        **kwargs
+    ):
+        """Initialize retryable node error.
+
+        Args:
+            node_id: ID of the node that failed
+            attempt: Current retry attempt number
+            max_retries: Maximum number of retries allowed
+            reason: Optional reason for the failure
+            **kwargs: Additional details to include in error context
+        """
+        message = f"Node '{node_id}' failed (attempt {attempt}/{max_retries})"
+        if reason:
+            message += f": {reason}"
+
+        details = {
+            "node_id": node_id,
+            "attempt": attempt,
+            "max_retries": max_retries,
+            **kwargs
+        }
+        if reason:
+            details["reason"] = reason
+
+        super().__init__(message, code="NODE_RETRY", details=details)
+        self.node_id = node_id
+        self.attempt = attempt
+        self.max_retries = max_retries
+
+
+class PermanentNodeError(FatalError):
+    """Permanent node execution errors.
+
+    Use this for permanent failures that will not succeed on retry.
+    Examples: invalid input, missing configuration, unsupported operation.
+    """
+
+    def __init__(
+        self,
+        node_id: str,
+        reason: str,
+        **kwargs
+    ):
+        """Initialize permanent node error.
+
+        Args:
+            node_id: ID of the node that failed
+            reason: Reason for the permanent failure
+            **kwargs: Additional details to include in error context
+        """
+        message = f"Node '{node_id}' permanently failed: {reason}"
+
+        details = {
+            "node_id": node_id,
+            "reason": reason,
+            **kwargs
+        }
+
+        super().__init__(message, code="NODE_PERMANENT_FAILURE", details=details)
+        self.node_id = node_id
+        self.reason = reason
+
+
+class NodeTimeoutError(TimeoutError):
+    """Node execution timeout.
+
+    Specialized timeout error for node execution with node-specific context.
+    """
+
+    def __init__(
+        self,
+        node_id: str,
+        timeout_ms: int,
+        **kwargs
+    ):
+        """Initialize node timeout error.
+
+        Args:
+            node_id: ID of the node that timed out
+            timeout_ms: Timeout value in milliseconds
+            **kwargs: Additional details to include in error context
+        """
+        message = f"Node '{node_id}' timed out after {timeout_ms}ms"
+
+        details = {
+            "node_id": node_id,
+            **kwargs
+        }
+
+        super().__init__(message, timeout_ms=timeout_ms, details=details)
+        self.node_id = node_id
+
+
+class NodeValidationError(ValidationError):
+    """Node input/output validation error.
+
+    Raised when node input or output fails validation.
+    """
+
+    def __init__(
+        self,
+        node_id: str,
+        validation_type: str,  # "input" or "output"
+        errors: List[str],
+        **kwargs
+    ):
+        """Initialize node validation error.
+
+        Args:
+            node_id: ID of the node with validation failure
+            validation_type: Type of validation ("input" or "output")
+            errors: List of validation error messages
+            **kwargs: Additional details to include in error context
+        """
+        message = f"Node '{node_id}' {validation_type} validation failed: {'; '.join(errors)}"
+
+        details = {
+            "node_id": node_id,
+            "validation_type": validation_type,
+            "errors": errors,
+            **kwargs
+        }
+
+        super().__init__(message, details=details)
+        self.node_id = node_id
+        self.validation_type = validation_type
+        self.errors = errors
+
+
+# ============================================================================
 # Error Classification
 # ============================================================================
 

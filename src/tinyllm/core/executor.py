@@ -25,6 +25,7 @@ from tinyllm.core.message import (
 )
 from tinyllm.core.node import BaseNode, NodeResult
 from tinyllm.core.trace import ExecutionTrace, TraceRecorder
+from tinyllm.errors import NodeTimeoutError, PermanentNodeError, RetryableNodeError
 from tinyllm.health import NodeHealthTracker, get_node_health_tracker
 from tinyllm.logging import get_logger
 from tinyllm.profiling import get_profiling_context
@@ -512,6 +513,14 @@ class Executor:
         except asyncio.TimeoutError:
             latency_ms = int((time.perf_counter() - start_time) * 1000)
 
+            # Create structured timeout error
+            timeout_error = NodeTimeoutError(
+                node_id=node.id,
+                timeout_ms=node.config.timeout_ms,
+                latency_ms=latency_ms,
+                trace_id=context.trace_id,
+            )
+
             # Record timeout failure in health tracker
             if self._health_tracker:
                 self._health_tracker.record_failure(
@@ -519,20 +528,84 @@ class Executor:
                     error=f"Timeout after {node.config.timeout_ms}ms"
                 )
 
+            logger.error(
+                "node_execution_timeout",
+                node_id=node.id,
+                timeout_ms=node.config.timeout_ms,
+                latency_ms=latency_ms,
+                trace_id=context.trace_id,
+            )
+
             return NodeResult.failure_result(
-                error=f"Node {node.id} timed out after {node.config.timeout_ms}ms",
+                error=timeout_error.message,
+                latency_ms=latency_ms,
+            )
+
+        except PermanentNodeError as e:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Record permanent failure in health tracker
+            if self._health_tracker:
+                self._health_tracker.record_failure(node.id, error=e.reason)
+
+            logger.error(
+                "node_execution_permanent_failure",
+                node_id=node.id,
+                reason=e.reason,
+                details=e.details,
+                latency_ms=latency_ms,
+                trace_id=context.trace_id,
+            )
+
+            return NodeResult.failure_result(
+                error=e.message,
+                latency_ms=latency_ms,
+            )
+
+        except RetryableNodeError as e:
+            latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Record retryable failure in health tracker
+            if self._health_tracker:
+                self._health_tracker.record_failure(node.id, error=e.message)
+
+            logger.warning(
+                "node_execution_retryable_failure",
+                node_id=node.id,
+                attempt=e.attempt,
+                max_retries=e.max_retries,
+                details=e.details,
+                latency_ms=latency_ms,
+                trace_id=context.trace_id,
+            )
+
+            return NodeResult.failure_result(
+                error=e.message,
                 latency_ms=latency_ms,
             )
 
         except Exception as e:
             latency_ms = int((time.perf_counter() - start_time) * 1000)
 
+            # Classify unknown exceptions as retryable by default
+            # Nodes can raise specific error types for better classification
+            error_msg = str(e)
+            logger.error(
+                "node_execution_unknown_error",
+                node_id=node.id,
+                error=error_msg,
+                error_type=type(e).__name__,
+                latency_ms=latency_ms,
+                trace_id=context.trace_id,
+                exc_info=True,
+            )
+
             # Record exception failure in health tracker
             if self._health_tracker:
-                self._health_tracker.record_failure(node.id, error=str(e))
+                self._health_tracker.record_failure(node.id, error=error_msg)
 
             return NodeResult.failure_result(
-                error=f"Node {node.id} failed: {str(e)}",
+                error=f"Node {node.id} failed: {error_msg}",
                 latency_ms=latency_ms,
             )
 

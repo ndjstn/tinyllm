@@ -18,8 +18,12 @@ from tinyllm.errors import (
     FatalError,
     ModelError,
     NetworkError,
+    NodeTimeoutError,
+    NodeValidationError,
+    PermanentNodeError,
     RateLimitError,
     RetryableError,
+    RetryableNodeError,
     RetryConfig,
     TimeoutError,
     TinyLLMError,
@@ -97,6 +101,104 @@ class TestExceptionHierarchy:
         assert error_dict["recoverable"] is True
         assert "timestamp" in error_dict
         assert "stack_trace" in error_dict
+
+    def test_retryable_node_error(self):
+        """Test retryable node error."""
+        error = RetryableNodeError(
+            node_id="test_node",
+            attempt=2,
+            max_retries=3,
+            reason="temporary failure",
+            extra_detail="test"
+        )
+        assert error.node_id == "test_node"
+        assert error.attempt == 2
+        assert error.max_retries == 3
+        assert error.recoverable is True
+        assert error.code == "NODE_RETRY"
+        assert error.details["node_id"] == "test_node"
+        assert error.details["attempt"] == 2
+        assert error.details["max_retries"] == 3
+        assert error.details["reason"] == "temporary failure"
+        assert error.details["extra_detail"] == "test"
+        assert "test_node" in error.message
+        assert "2/3" in error.message
+        assert "temporary failure" in error.message
+
+    def test_retryable_node_error_without_reason(self):
+        """Test retryable node error without reason."""
+        error = RetryableNodeError(node_id="test_node")
+        assert error.node_id == "test_node"
+        assert error.attempt == 1
+        assert error.max_retries == 3
+        assert "reason" not in error.details
+        assert "test_node" in error.message
+
+    def test_permanent_node_error(self):
+        """Test permanent node error."""
+        error = PermanentNodeError(
+            node_id="test_node",
+            reason="invalid configuration",
+            config_key="missing_param"
+        )
+        assert error.node_id == "test_node"
+        assert error.reason == "invalid configuration"
+        assert error.recoverable is False
+        assert error.code == "NODE_PERMANENT_FAILURE"
+        assert error.details["node_id"] == "test_node"
+        assert error.details["reason"] == "invalid configuration"
+        assert error.details["config_key"] == "missing_param"
+        assert "test_node" in error.message
+        assert "invalid configuration" in error.message
+
+    def test_node_timeout_error(self):
+        """Test node timeout error."""
+        error = NodeTimeoutError(
+            node_id="test_node",
+            timeout_ms=5000,
+            trace_id="test_trace"
+        )
+        assert error.node_id == "test_node"
+        assert error.recoverable is True
+        assert error.code == "TIMEOUT_ERROR"
+        assert error.details["timeout_ms"] == 5000
+        assert error.details["node_id"] == "test_node"
+        assert error.details["trace_id"] == "test_trace"
+        assert "test_node" in error.message
+        assert "5000ms" in error.message
+
+    def test_node_validation_error(self):
+        """Test node validation error."""
+        errors = ["Field 'name' is required", "Field 'age' must be positive"]
+        error = NodeValidationError(
+            node_id="test_node",
+            validation_type="input",
+            errors=errors,
+            schema="UserSchema"
+        )
+        assert error.node_id == "test_node"
+        assert error.validation_type == "input"
+        assert error.errors == errors
+        assert error.recoverable is False
+        assert error.code == "VALIDATION_ERROR"
+        assert error.details["node_id"] == "test_node"
+        assert error.details["validation_type"] == "input"
+        assert error.details["errors"] == errors
+        assert error.details["schema"] == "UserSchema"
+        assert "test_node" in error.message
+        assert "input" in error.message
+        assert "Field 'name' is required" in error.message
+
+    def test_node_validation_error_output(self):
+        """Test node validation error for output."""
+        errors = ["Response missing 'data' field"]
+        error = NodeValidationError(
+            node_id="api_node",
+            validation_type="output",
+            errors=errors
+        )
+        assert error.validation_type == "output"
+        assert "output" in error.message
 
 
 class TestErrorClassifier:
