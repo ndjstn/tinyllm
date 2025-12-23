@@ -1,0 +1,195 @@
+name: Performance Regression
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  performance-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run performance benchmarks
+        run: |
+          # Create benchmark results directory
+          mkdir -p benchmarks/results
+
+          # Run pytest-benchmark
+          uv run pytest tests/ \
+            -m perf \
+            --benchmark-only \
+            --benchmark-json=benchmarks/results/current_benchmark.json \
+            --benchmark-warmup=on \
+            --benchmark-min-rounds=5 \
+            || echo "No performance tests found, creating baseline"
+
+      - name: Download baseline benchmark
+        continue-on-error: true
+        run: |
+          # Try to get baseline from previous run
+          gh run download --repo ${{ github.repository }} --name performance-baseline \
+            --dir benchmarks/results/ || echo "No baseline found"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Compare with baseline
+        id: regression_check
+        run: |
+          # Create comparison script
+          cat > compare_perf.py << 'EOF'
+          import json
+          import sys
+          from pathlib import Path
+
+          current_file = Path("benchmarks/results/current_benchmark.json")
+          baseline_file = Path("benchmarks/results/baseline_benchmark.json")
+
+          if not current_file.exists():
+              print("No current benchmark results found")
+              sys.exit(0)
+
+          if not baseline_file.exists():
+              print("No baseline found, setting current as baseline")
+              current_file.rename(baseline_file)
+              sys.exit(0)
+
+          with open(current_file) as f:
+              current = json.load(f)
+
+          with open(baseline_file) as f:
+              baseline = json.load(f)
+
+          # Compare benchmarks
+          regressions = []
+          improvements = []
+
+          current_benchmarks = {b['name']: b for b in current.get('benchmarks', [])}
+          baseline_benchmarks = {b['name']: b for b in baseline.get('benchmarks', [])}
+
+          print("## Performance Comparison")
+          print("")
+          print("| Benchmark | Baseline (ms) | Current (ms) | Change | Status |")
+          print("|-----------|---------------|--------------|--------|--------|")
+
+          for name, current_data in current_benchmarks.items():
+              if name not in baseline_benchmarks:
+                  print(f"| {name} | N/A | {current_data['stats']['mean']*1000:.2f} | NEW | ⭐ |")
+                  continue
+
+              baseline_mean = baseline_benchmarks[name]['stats']['mean']
+              current_mean = current_data['stats']['mean']
+
+              # Calculate percentage change
+              change_pct = ((current_mean - baseline_mean) / baseline_mean) * 100
+
+              # Format change
+              if change_pct > 0:
+                  change_str = f"+{change_pct:.1f}%"
+                  status = "🔴" if change_pct > 10 else "⚠️"
+                  if change_pct > 10:
+                      regressions.append((name, change_pct))
+              elif change_pct < 0:
+                  change_str = f"{change_pct:.1f}%"
+                  status = "✅"
+                  if change_pct < -10:
+                      improvements.append((name, abs(change_pct)))
+              else:
+                  change_str = "0%"
+                  status = "➖"
+
+              print(f"| {name} | {baseline_mean*1000:.2f} | {current_mean*1000:.2f} | {change_str} | {status} |")
+
+          print("")
+          print("### Summary")
+          print(f"- **Regressions:** {len(regressions)}")
+          print(f"- **Improvements:** {len(improvements)}")
+
+          if regressions:
+              print("")
+              print("#### Performance Regressions (>10% slower)")
+              for name, pct in regressions:
+                  print(f"- {name}: +{pct:.1f}%")
+
+          if improvements:
+              print("")
+              print("#### Performance Improvements (>10% faster)")
+              for name, pct in improvements:
+                  print(f"- {name}: -{pct:.1f}%")
+
+          # Exit with error if severe regressions
+          if any(pct > 20 for _, pct in regressions):
+              print("")
+              print("❌ **FAILED:** Severe performance regression detected (>20%)")
+              sys.exit(1)
+          EOF
+
+          python compare_perf.py | tee performance_report.md
+
+          # Export for later steps
+          echo "HAS_REGRESSION=$?" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('performance_report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🚀 Performance Regression Check\n\n' + report
+            });
+
+      - name: Save baseline for main branch
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        run: |
+          cp benchmarks/results/current_benchmark.json benchmarks/results/baseline_benchmark.json
+
+      - name: Upload baseline
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-baseline
+          path: benchmarks/results/baseline_benchmark.json
+          retention-days: 90
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-report
+          path: performance_report.md
+          retention-days: 30
+
+      - name: Add to job summary
+        if: always()
+        run: |
+          if [ -f performance_report.md ]; then
+            cat performance_report.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail on severe regression
+        if: steps.regression_check.outputs.HAS_REGRESSION == '1'
+        run: |
+          echo "Performance regression detected. Please investigate and optimize."
+          exit 1

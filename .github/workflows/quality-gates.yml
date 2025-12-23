@@ -1,0 +1,210 @@
+name: Quality Gates
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  quality-summary:
+    name: Quality Gate Summary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run all quality checks
+        id: quality_checks
+        run: |
+          set +e  # Don't exit on error
+
+          # Initialize counters
+          PASSED=0
+          FAILED=0
+
+          echo "## Quality Gate Results" > quality_report.md
+          echo "" >> quality_report.md
+          echo "| Check | Status | Details |" >> quality_report.md
+          echo "|-------|--------|---------|" >> quality_report.md
+
+          # 1. Code Coverage Check
+          echo "### Running Coverage Check..."
+          uv run python scripts/check_coverage.py > coverage_output.txt 2>&1
+          if [ $? -eq 0 ]; then
+            echo "| Coverage (≥80%) | ✅ PASS | $(grep 'Total Coverage:' coverage_output.txt | awk '{print $3}') |" >> quality_report.md
+            ((PASSED++))
+          else
+            COVERAGE=$(grep 'Total Coverage:' coverage_output.txt | awk '{print $3}' || echo "N/A")
+            echo "| Coverage (≥80%) | ❌ FAIL | $COVERAGE |" >> quality_report.md
+            ((FAILED++))
+          fi
+
+          # 2. Linting Check
+          echo "### Running Linting..."
+          uv run ruff check src/ tests/ --statistics > lint_output.txt 2>&1
+          if [ $? -eq 0 ]; then
+            echo "| Linting | ✅ PASS | No issues |" >> quality_report.md
+            ((PASSED++))
+          else
+            ISSUES=$(grep -c "error" lint_output.txt || echo "0")
+            echo "| Linting | ❌ FAIL | $ISSUES errors |" >> quality_report.md
+            ((FAILED++))
+          fi
+
+          # 3. Type Checking
+          echo "### Running Type Check..."
+          uv run mypy src/tinyllm --ignore-missing-imports > mypy_output.txt 2>&1
+          if [ $? -eq 0 ]; then
+            echo "| Type Checking | ✅ PASS | No issues |" >> quality_report.md
+            ((PASSED++))
+          else
+            ERRORS=$(grep -c "error:" mypy_output.txt || echo "0")
+            echo "| Type Checking | ❌ FAIL | $ERRORS errors |" >> quality_report.md
+            ((FAILED++))
+          fi
+
+          # 4. Code Complexity Check
+          echo "### Checking Code Complexity..."
+          uv pip install radon
+          HIGH_COMPLEXITY=$(uv run radon cc src/ -a -nb --min=B --total-average | grep -c "^[A-Z]" || echo "0")
+          if [ $HIGH_COMPLEXITY -eq 0 ]; then
+            echo "| Complexity | ✅ PASS | All functions acceptable |" >> quality_report.md
+            ((PASSED++))
+          else
+            echo "| Complexity | ⚠️  WARN | $HIGH_COMPLEXITY complex functions |" >> quality_report.md
+            # Don't fail on complexity, just warn
+            ((PASSED++))
+          fi
+
+          # 5. Security Check
+          echo "### Running Security Scan..."
+          uv pip install bandit[toml]
+          uv run bandit -r src/ -ll -f json -o bandit_report.json > /dev/null 2>&1
+          ISSUES=$(cat bandit_report.json | python3 -c "import sys, json; print(len(json.load(sys.stdin)['results']))" 2>/dev/null || echo "0")
+          if [ "$ISSUES" = "0" ]; then
+            echo "| Security Scan | ✅ PASS | No high/medium issues |" >> quality_report.md
+            ((PASSED++))
+          else
+            echo "| Security Scan | ❌ FAIL | $ISSUES issues found |" >> quality_report.md
+            ((FAILED++))
+          fi
+
+          # 6. Test Count Check
+          echo "### Checking Test Count..."
+          TEST_COUNT=$(uv run pytest --collect-only -q tests/ 2>/dev/null | tail -1 | awk '{print $1}')
+          if [ "${TEST_COUNT:-0}" -ge 300 ]; then
+            echo "| Test Count (≥300) | ✅ PASS | $TEST_COUNT tests |" >> quality_report.md
+            ((PASSED++))
+          else
+            echo "| Test Count (≥300) | ❌ FAIL | $TEST_COUNT tests |" >> quality_report.md
+            ((FAILED++))
+          fi
+
+          # Summary
+          echo "" >> quality_report.md
+          echo "---" >> quality_report.md
+          echo "" >> quality_report.md
+          echo "**Summary:** $PASSED passed, $FAILED failed" >> quality_report.md
+
+          # Export results
+          echo "PASSED=$PASSED" >> $GITHUB_OUTPUT
+          echo "FAILED=$FAILED" >> $GITHUB_OUTPUT
+
+          # Exit with failure if any critical checks failed
+          if [ $FAILED -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Comment PR with quality report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('quality_report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-gate-report
+          path: |
+            quality_report.md
+            coverage_output.txt
+            lint_output.txt
+            mypy_output.txt
+            bandit_report.json
+          retention-days: 30
+
+      - name: Add to job summary
+        if: always()
+        run: |
+          cat quality_report.md >> $GITHUB_STEP_SUMMARY
+
+  dependency-freshness:
+    name: Dependency Freshness Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Check for outdated dependencies
+        run: |
+          uv pip install pip-check
+          uv run pip-check || echo "::warning::Some dependencies are outdated"
+        continue-on-error: true
+
+  breaking-changes:
+    name: Breaking Change Detection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for API changes
+        run: |
+          # Check for changes in public API files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          echo "## API Change Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check critical API files
+          CRITICAL_FILES="src/tinyllm/core/graph.py src/tinyllm/core/executor.py src/tinyllm/core/node.py src/tinyllm/config/"
+
+          BREAKING=0
+          for file in $CRITICAL_FILES; do
+            if echo "$CHANGED_FILES" | grep -q "$file"; then
+              echo "⚠️  Modified: $file" >> $GITHUB_STEP_SUMMARY
+              ((BREAKING++))
+            fi
+          done
+
+          if [ $BREAKING -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Warning:** $BREAKING critical API file(s) modified. Please ensure backward compatibility." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No critical API changes detected" >> $GITHUB_STEP_SUMMARY
+          fi
